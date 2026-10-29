@@ -1,0 +1,34 @@
+[project]
+name = "job-market-search"
+version = "0.1.0"
+description = "Local semantic search, resume matching, skill trends and RAG Q&A over ~11k live software job postings."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+  "sentence-transformers>=3.0",
+  "numpy>=1.26",
+  "pandas>=2.1",
+  "scikit-learn>=1.3",
+  "umap-learn>=0.5",
+  "streamlit>=1.35",
+  "plotly>=5.20",
+  "pypdf>=4.0",
+  "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "playwright>=1.40"]
+
+[project.scripts]
+jms = "job_market_search.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["job_market_search"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

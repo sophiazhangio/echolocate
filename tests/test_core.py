@@ -1,0 +1,160 @@
+import json
+import zlib
+
+import numpy as np
+import pytest
+
+from job_market_search import skills, store
+from job_market_search.search import Filters, Searcher, _rrf
+from job_market_search.text import chunk, is_software, level
+from job_market_search.trends import demand, over_time, rising
+
+
+class FakeEmbedder:
+    """Bag-of-words hashed into 64 dims: deterministic and close enough to test ranking logic."""
+    name = "fake"
+
+    def encode(self, texts, progress=False):
+        out = np.zeros((len(texts), 64), dtype=np.float32)
+        for i, t in enumerate(texts):
+            for w in t.lower().replace(".", " ").replace(",", " ").split():
+                out[i, zlib.crc32(w.encode()) % 64] += 1
+        return out / np.maximum(np.linalg.norm(out, axis=1, keepdims=True), 1e-9)
+
+
+POSTINGS = [
+    dict(id="a", company="Acme", title="Software Engineer, New Grad", location="Remote - US", remote=True,
+         url="u/a", posted="2026-10-01", pay="", description="Build Next.js apps with TypeScript and React. LLM agents."),
+    dict(id="b", company="Beta", title="Senior Backend Engineer", location="Irvine, CA", remote=False,
+         url="u/b", posted="2026-09-01", pay="$200K", description="Go and Kafka services on AWS with Kubernetes."),
+    dict(id="c", company="Gamma", title="Account Executive", location="Los Angeles", remote=False,
+         url="u/c", posted="2026-10-02", pay="", description="Sell software to enterprises."),
+    dict(id="d", company="Delta", title="Frontend Engineer I", location="Remote", remote=True,
+         url="u/d", posted="2026-10-03", pay="", description="React and TypeScript frontend, design systems, Next.js."),
+]
+
+
+@pytest.fixture
+def built(tmp_path):
+    dumps = tmp_path / "dumps"
+    dumps.mkdir()
+    (dumps / "2026-10-28.jsonl").write_text("\n".join(json.dumps(p) for p in POSTINGS[:3]))
+    (dumps / "2026-10-29.jsonl").write_text("\n".join(json.dumps(p) for p in POSTINGS))
+    db = tmp_path / "index.sqlite"
+    stats = store.build(dumps, db, FakeEmbedder(), log=lambda *_: None)
+    return db, stats
+
+
+def test_chunk_prefixes_title_and_covers_all_words():
+    desc = " ".join(f"w{i}." if i % 30 == 29 else f"w{i}" for i in range(250))
+    parts = chunk("SWE", "Acme", desc)
+    assert all(p.startswith("SWE at Acme:") for p in parts)
+    seen = set(" ".join(parts).split())
+    assert {f"w{i}" for i in range(250) if i % 30 != 29} <= seen
+    assert len(parts) >= 3
+
+
+def test_level_and_family():
+    assert level("Software Engineer, New Grad") == "entry"
+    assert level("Software Engineer I") == "entry"
+    assert level("Senior Software Engineer") == "senior+"
+    assert level("Software Engineering Intern") == "intern"
+    assert level("Software Engineer II") == "unspecified"
+    assert is_software("Frontend Engineer")
+    assert is_software("Sales Engineer, Software") and not is_software("Sales Engineer")
+    assert not is_software("Account Executive")
+
+
+def test_skill_patterns_are_strict():
+    assert "Java" not in skills.find("JavaScript developer")
+    assert "Go" not in skills.find("go to market and get things going")
+    assert "Go" in skills.find("services in Go, Python")
+    assert "Next.js" in skills.find("NextJS and React")
+    assert "RAG / embeddings" in skills.find("vector database for retrieval-augmented generation")
+
+
+def test_build_is_incremental(built, tmp_path):
+    db, stats = built
+    assert stats["postings"] == 4 and stats["embedded"] == 4
+    again = store.build(tmp_path / "dumps", db, FakeEmbedder(), log=lambda *_: None)
+    assert again["new_dumps"] == 0 and again["embedded"] == 0
+
+
+def test_first_and_last_seen(built):
+    db, _ = built
+    con = store.connect(db)
+    rows = dict((r[0], r[1:]) for r in con.execute("SELECT id, first_seen, last_seen FROM postings"))
+    assert rows["d"] == ("2026-10-29", "2026-10-29")
+    assert rows["b"] == ("2026-10-28", "2026-10-29")
+
+
+def test_search_filters_and_ranking(built):
+    db, _ = built
+    s = Searcher(store.Index.load(db), FakeEmbedder())
+    res = s.search("remote Next.js TypeScript", Filters(), k=5)
+    assert set(res["id"]) <= {"a", "b", "d"}          # software_only drops the account executive
+    assert res.iloc[0]["id"] in {"a", "d"}
+    remote = s.search("engineer", Filters(remote_only=True), k=5)
+    assert set(remote["id"]) <= {"a", "d"}
+    entry = s.search("engineer", Filters(levels=["entry"]), k=5)
+    assert set(entry["id"]) == {"a", "d"}
+    oc = s.search("engineer", Filters(location="irvine"), k=5)
+    assert list(oc["id"]) == ["b"]
+
+
+def test_similar_to_posting_excludes_itself(built):
+    db, _ = built
+    s = Searcher(store.Index.load(db), FakeEmbedder())
+    res = s.similar_to_posting("a", k=3)
+    assert "a" not in set(res["id"])
+    assert res.iloc[0]["id"] == "d"
+
+
+def test_rrf_prefers_items_ranked_well_in_both():
+    dense = np.array([0.9, 0.8, 0.1])
+    sparse = np.array([0.0, 0.7, 0.6])
+    fused = _rrf([dense, np.where(sparse > 0, sparse, -np.inf)])
+    assert fused.argmax() == 1
+
+
+def test_trends(built):
+    db, _ = built
+    ix = store.Index.load(db)
+    d = demand(ix.postings[ix.postings["software"]])
+    assert d.set_index("skill").loc["TypeScript", "postings"] == 2
+    t = over_time(db)
+    ts = t[t["skill"] == "TypeScript"].set_index("date")["share"]
+    assert ts["2026-10-28"] == pytest.approx(50.0) and ts["2026-10-29"] == pytest.approx(200 / 3)
+    r = rising(t)
+    assert "TypeScript" in set(r["skill"])
+
+
+def test_parse_query_turns_words_into_filters():
+    from job_market_search.search import parse_query
+    q, f, notes = parse_query("remote new grad roles using Next.js", Filters())
+    assert f.remote_only and f.levels == ["entry", "unspecified"]
+    assert "remote" not in q.lower() and "roles" not in q.lower() and "Next.js" in q
+    assert len(notes) == 2
+    q2, f2, notes2 = parse_query("backend engineer Go", Filters())
+    assert q2 == "backend engineer Go" and not notes2 and not f2.remote_only
+
+
+def test_duplicate_roles_collapse(tmp_path):
+    dumps = tmp_path / "dumps"
+    dumps.mkdir()
+    rows = POSTINGS + [dict(POSTINGS[3], id="d2", location="Austin"), dict(POSTINGS[3], id="d3", location="NYC")]
+    (dumps / "2026-10-29.jsonl").write_text("\n".join(json.dumps(p) for p in rows))
+    db = tmp_path / "x.sqlite"
+    store.build(dumps, db, FakeEmbedder(), log=lambda *_: None)
+    s = Searcher(store.Index.load(db), FakeEmbedder())
+    res = s.search("React TypeScript frontend", Filters(), k=5)
+    assert (res["title"] == "Frontend Engineer I").sum() == 1
+    assert res.loc[res["title"] == "Frontend Engineer I", "more_locations"].item() == 2
+
+
+def test_rag_gather_applies_question_filters(built):
+    from job_market_search.rag import gather
+    db, _ = built
+    s = Searcher(store.Index.load(db), FakeEmbedder())
+    got = gather(s, "which remote roles use React?", Filters())
+    assert got and all(x["remote"] for x in got)
