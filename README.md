@@ -4,7 +4,7 @@
 
 Semantic search, resume matching, skill-demand trends and RAG Q&A over every job posting that my [job-radar](https://github.com/sophiazhangio/job-radar) tool pulls each day: about **11,000 live postings from ~100 tech companies** (Greenhouse, Ashby and Lever public job boards).
 
-**Live demo: [echolocate.streamlit.app](https://echolocate.streamlit.app/)** (a fixed 2026-10-29 snapshot on a free CPU server; the first visit after a quiet spell takes a minute to wake up, and RAG answers need Ollama locally).
+**Live site: [echolocate.streamlit.app](https://echolocate.streamlit.app/)**, updated every morning for software and IT jobs (a free CPU server: the first visit after a quiet spell takes a minute to wake up, and RAG answers need Ollama locally).
 
 Everything runs on a laptop. No paid APIs or API keys: embeddings come from `sentence-transformers` (all-MiniLM-L6-v2), the vectors live in SQLite + NumPy, and answers come from a local Llama 3.2 3B model through [Ollama](https://ollama.com).
 
@@ -155,6 +155,10 @@ Built-in profiles:
 
 Any other name needs its own `profile.json`; a missing or unreadable file falls back to `software`. Search, RAG and the location map work the same for every profile. The evaluation set (`echolocate/evaluate.py`) is written for software queries.
 
+### How the live site stays current
+
+`.github/workflows/daily.yml` runs every morning on GitHub Actions (free for public repos). It checks out job-radar, fetches each career type (`npm run dump -- --profile <name>`), then `scripts/hosted_build.py` starts from yesterday's published index, embeds only the new postings, precomputes the default role maps and uploads everything to this repo's [`data` release](https://github.com/sophiazhangio/echolocate/releases/tag/data) with a `manifest.json`. The Streamlit app reads the manifest (at most every 30 minutes), downloads a career type's files when they are newer, and offers every published career type in its picker. Because each day's snapshot is kept, the trends-over-time chart grows a point per day. If a fetch fails, yesterday's data stays up.
+
 ## Screenshots
 
 | | |
@@ -175,6 +179,7 @@ echolocate/
   clusters.py   UMAP + HDBSCAN / KMeans role map with automatic labels
   profiles.py   career profiles from job-radar's profiles/<name>/profile.json
   jobradar.py   runs job-radar's fetch and new-profile commands from the app
+scripts/hosted_build.py   daily build for the live site (see .github/workflows/daily.yml)
   geo.py        free-text job locations -> cities with coordinates (offline GeoNames)
   rag.py        Ollama client and grounded prompt
   evaluate.py   precision@10 benchmark

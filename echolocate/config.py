@@ -25,6 +25,8 @@ DEMO = os.environ.get("ECHO_DEMO", "") not in ("", "0", "false") or str(ROOT).st
 DEMO_ASSETS = os.environ.get(
     "ECHO_DEMO_ASSETS", "https://github.com/sophiazhangio/echolocate/releases/download/demo-2026-10-29")
 DEMO_FILES = ["index.sqlite", "map-47021c78941c.pkl", "map-88aebda555ca.pkl"]
+# Daily data for the hosted site, published by .github/workflows/daily.yml (manifest.json + files).
+HOSTED_DATA = os.environ.get("ECHO_HOSTED_DATA", "https://github.com/sophiazhangio/echolocate/releases/download/data")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
 

@@ -157,10 +157,12 @@ def _from_json(name: str, path: Path) -> Profile:
 
 
 @lru_cache(maxsize=16)
-def _load(name: str, job_radar: str) -> Profile:
+def _load(name: str, job_radar: str, data_root: str) -> Profile:
     if name != "software":
-        path = Path(job_radar) / "profiles" / name / "profile.json"
-        if path.exists():
+        # job-radar's file; on the hosted site, the copy published next to the data
+        for path in (Path(job_radar) / "profiles" / name / "profile.json", config.data_dir(name) / "profile.json"):
+            if not path.exists():
+                continue
             try:
                 return _from_json(name, path)
             except (ValueError, OSError) as e:
@@ -174,7 +176,7 @@ def _load(name: str, job_radar: str) -> Profile:
 
 def get(name: str | None = None) -> Profile:
     """The profile by name, or this install's active one (config.PROFILE)."""
-    return _load(name or config.PROFILE, str(config.JOB_RADAR))
+    return _load(name or config.PROFILE, str(config.JOB_RADAR), str(config.DATA_ROOT))
 
 
 def available() -> list[dict]:

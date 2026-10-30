@@ -1,0 +1,68 @@
+# Every morning: fetch postings with job-radar for each career type, add them to the index and
+# publish the result to this repo's `data` release, which the hosted site downloads.
+name: Daily data
+
+on:
+  schedule:
+    - cron: "17 13 * * *"   # 13:17 UTC, about 6 am in California
+  workflow_dispatch:
+
+permissions:
+  contents: write   # upload release assets
+
+concurrency:
+  group: daily-data
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PROFILES: software it
+      JOB_RADAR_DIR: ${{ github.workspace }}/job-radar
+      ECHO_DATA: ${{ github.workspace }}/work
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: sophiazhangio/job-radar
+          path: job-radar
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          (cd job-radar && npm ci --omit=dev)
+          pip install -r requirements.txt
+
+      - name: Cache the embedding model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2
+
+      - name: Fetch today's postings
+        working-directory: job-radar
+        run: |
+          for p in $PROFILES; do
+            # one failing profile shouldn't stop the others; the build keeps yesterday's data for it
+            if out=$(npm run --silent dump -- --profile "$p" 2>&1); then
+              echo "$out" | tail -n 1
+            else
+              echo "$out" | tail -n 20
+              echo "::warning::job-radar failed for $p"
+            fi
+          done
+
+      - name: Index and publish
+        run: python scripts/hosted_build.py $PROFILES --upload

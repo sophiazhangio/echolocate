@@ -130,7 +130,70 @@ if not config.DEMO:
         st.stop()
     config.use_profile(pick)
 
-if config.DEMO and not config.DB.exists():
+@st.cache_data(ttl=1800, show_spinner=False)
+def hosted_manifest() -> dict | None:
+    """What the daily GitHub job last published; checked at most every 30 minutes."""
+    import requests
+    try:
+        r = requests.get(f"{config.HOSTED_DATA}/manifest.json", timeout=15)
+        return r.json() if r.status_code == 200 else None
+    except (requests.RequestException, ValueError):
+        return None
+
+
+def sync_hosted(profile: str, info: dict) -> None:
+    """Download a profile's newest published data unless this server already has it."""
+    import json as _json
+    import requests
+    marker = config.DATA / "version.json"
+    want = {"date": info["date"], "files": info["files"]}
+    try:
+        if config.DB.exists() and _json.loads(marker.read_text()) == want:
+            return
+    except (OSError, ValueError):
+        pass
+    config.DATA.mkdir(parents=True, exist_ok=True)
+    bar = st.progress(0.0, f"Downloading the {info['date']} {info['label']} postings (first visit after an update) ...")
+    for i, name in enumerate(info["files"]):
+        part = config.DATA / (name + ".part")
+        with requests.get(f"{config.HOSTED_DATA}/{profile}__{name}", stream=True, timeout=120) as r:
+            r.raise_for_status()
+            total, done = int(r.headers.get("content-length", 0)), 0
+            with open(part, "wb") as fh:
+                for block in r.iter_content(1 << 20):
+                    fh.write(block)
+                    done += len(block)
+                    if total:
+                        bar.progress((i + done / total) / len(info["files"]), f"Downloading {name} "
+                                     f"({done >> 20} / {total >> 20} MB) ...")
+        part.replace(config.DATA / name)
+    for old in config.DATA.glob("map-*.pkl"):  # yesterday's map caches
+        if old.name not in info["files"]:
+            old.unlink()
+    marker.write_text(_json.dumps(want))
+    bar.empty()
+    profiles._load.cache_clear()
+    load.clear()
+
+
+MANIFEST = hosted_manifest() if config.DEMO else None
+if MANIFEST and MANIFEST.get("profiles"):
+    # Hosted site: career types are whatever the daily job published.
+    published = MANIFEST["profiles"]
+    names = list(published)
+    if st.session_state.get("career") not in names:
+        st.session_state["career"] = "software" if "software" in names else names[0]
+    with st.sidebar:
+        pick = st.selectbox("Career type", names, key="career", format_func=lambda n: published[n]["label"],
+                            help="Postings are fetched from public job boards every morning.")
+    config.use_profile(pick)
+    try:
+        sync_hosted(pick, published[pick])
+    except Exception:
+        if not config.DB.exists():
+            st.error("Couldn't download today's data. Reload the page in a minute.")
+            st.stop()
+elif config.DEMO and not config.DB.exists():
     download_demo_data()
 if not config.DB.exists():
     label = profiles.get().ui["label"]
@@ -250,8 +313,9 @@ st.markdown("*Find roles by meaning, not keywords.*")
 st.caption(f"Semantic search, resume matching and skill trends over {len(df):,} live postings from "
            f"{df['company'].nunique():,} companies"
            + (" (Greenhouse, Ashby, Lever). " if PROFILE.name == "software" else "' public job boards. ")
-           + (f"Live demo on a fixed snapshot from {ix.latest_date}; "
-              "[source and setup on GitHub](https://github.com/sophiazhangio/echolocate)."
+           + ((f"Updated every morning; this snapshot is from {ix.latest_date}. " if MANIFEST else
+               f"Live demo on a fixed snapshot from {ix.latest_date}; ")
+              + "[source and setup on GitHub](https://github.com/sophiazhangio/echolocate)."
               if config.DEMO else "Everything runs locally."))
 if PROFILE.name != "software":
     st.caption(f"Career profile: **{md(UI['label'])}**" + (f" · {md(UI['description'])}" if UI.get("description") else "")
