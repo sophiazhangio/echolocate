@@ -25,6 +25,8 @@ from .store import Index
 _TITLE_NOISE = (r"\b(i{1,3}|iv|\d+|remote|us|usa|new york|san francisco|hybrid|nyc|sf|ny|ca|onsite|"
                 r"senior|sr|staff|principal|lead|engineer|engineers|engineering|software|developer|"
                 r"member|technical|team|manager)\b")
+# Extra words every IT title shares, so IT area names come from what differs ("help desk", "network").
+_IT_TITLE_NOISE = r"\b(it|specialist|technician|administrator|admin|analyst|support|tier|level|services?)\b"
 
 
 def center_by_company(X: np.ndarray, companies: pd.Series, min_postings: int = 3) -> np.ndarray:
@@ -47,7 +49,7 @@ def cluster_map(ix: Index, mask: np.ndarray | None = None, method: str = "hdbsca
     clusters: cluster, label, postings, top companies, top skills.
     """
     mask = np.ones(len(ix.postings), dtype=bool) if mask is None else mask
-    key = hashlib.sha1(np.packbits(mask).tobytes() + f"{ix.latest_date}{ix.model}{method}{n_clusters}{seed}v4".encode()).hexdigest()[:12]
+    key = hashlib.sha1(np.packbits(mask).tobytes() + f"{ix.latest_date}{ix.model}{method}{n_clusters}{seed}v4{'' if config.FIELD == 'software' else config.FIELD}".encode()).hexdigest()[:12]
     path = config.DATA / f"map-{key}.pkl"
     if cache and path.exists():
         return pickle.loads(path.read_bytes())
@@ -101,6 +103,8 @@ def _label_clusters(titles: pd.Series, labels: np.ndarray, top: int = 3) -> dict
     docs, ids = [], []
     for c in sorted(set(labels) - {-1}):
         t = titles[labels == c].str.lower().str.replace(_TITLE_NOISE, " ", regex=True)
+        if config.FIELD == "it":
+            t = t.str.replace(_IT_TITLE_NOISE, " ", regex=True)
         docs.append(" . ".join(t))
         ids.append(c)
     if not docs:

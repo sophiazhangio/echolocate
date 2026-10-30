@@ -126,9 +126,21 @@ All optional, as environment variables:
 |---|---|---|
 | `JOB_RADAR_DIR` | `../job-radar` | where to find dumps (`out/all/*.jsonl`) and the resume path |
 | `ECHO_RESUME` | from job-radar config | resume PDF or text file |
+| `ECHO_FIELD` | from job-radar config, else `software` | `software` or `it` (see below) |
 | `ECHO_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | any sentence-transformers model; changing it re-embeds everything |
 | `ECHO_DEVICE` | `cpu` | `mps` or `cuda` for a GPU |
 | `OLLAMA_MODEL` | `llama3.2:3b` | any model you have pulled |
+
+### Using it for IT jobs
+
+echolocate defaults to software engineering roles. For IT support, systems and network administration jobs, set `"field": "it"` in job-radar's `config.local.json` (or `ECHO_FIELD=it`), then rebuild the index with `python -m echolocate index`. That switches:
+
+- the role filter to **IT roles only** (help desk, service desk, desktop support, systems / network administrator, Microsoft 365 admin, field technician ...);
+- the skill list behind trends and resume matching to IT tools and certifications: Windows Server, Active Directory, Entra ID, Microsoft 365, Exchange, Intune, VMware, Hyper-V, PowerShell, DNS / DHCP, firewalls, VPN, backup, RMM / PSA, ServiceNow, ITIL, CompTIA A+ / Network+ / Security+ and more (`IT_SKILLS` in `echolocate/skills.py`);
+- entry-level detection to also read "Tier 1" and "Technician I";
+- role-map names and the example search and RAG questions.
+
+The dump format, search, RAG and the location map are the same for both. Changing the field only re-tags postings; nothing is re-embedded. The live demo always uses `software`. The evaluation set (`echolocate/evaluate.py`) is written for software queries.
 
 ## Screenshots
 

@@ -217,3 +217,27 @@ def _index(n):
                        "location": "SF", "level": "entry", "remote": False, "url": "",
                        "skills": [["Python"]] * n})
     return SimpleNamespace(postings=df, posting_vecs=vecs, latest_date="2026-10-29", model="fake")
+
+
+def test_it_field(tmp_path, monkeypatch):
+    import json
+    from echolocate import config, skills
+    from echolocate.text import in_field, is_it, level
+    assert is_it("Help Desk Technician - Tier 1") and is_it("Systems Administrator") and is_it("Director of IT")
+    assert not is_it("Software Engineer") and not is_it("IT Sales Account Executive")
+    assert in_field("Software Engineer", "software") and not in_field("Software Engineer", "it")
+    assert {"Active Directory", "Intune", "CompTIA A+"} <= set(skills.find("AD, Intune and CompTIA A+ required "
+                                                                           "(active directory)", "it"))
+    assert skills.find("Python and React", "software") == ["Python", "React"]
+    # the field comes from job-radar's config.local.json; software behaviour is the default
+    (tmp_path / "config.local.json").write_text(json.dumps({"field": "IT"}))
+    monkeypatch.setattr(config, "JOB_RADAR", tmp_path)
+    monkeypatch.setattr(config, "DEMO", False)
+    monkeypatch.delenv("ECHO_FIELD", raising=False)
+    assert config.field() == "it"
+    monkeypatch.setattr(config, "DEMO", True)
+    assert config.field() == "software"  # the hosted demo never changes
+    monkeypatch.setattr(config, "FIELD", "software")
+    assert level("Support Specialist I (Merchant Care)") == "unspecified"
+    monkeypatch.setattr(config, "FIELD", "it")
+    assert level("Tier 1 Service Desk Analyst") == "entry"

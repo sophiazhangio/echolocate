@@ -61,12 +61,34 @@ searcher = load(config.DB.stat().st_mtime)
 ix = searcher.ix
 df = ix.postings
 
+# Texts and defaults that depend on the kind of job (config.FIELD; job-radar's "field" setting).
+UI = {
+    "software": dict(
+        role_filter="Software roles only",
+        query="remote new grad roles using Next.js and LLM agents",
+        hybrid_help="Off = embeddings only. Hybrid also rewards exact names like 'Next.js'.",
+        question="Which remote new grad roles mention LLM agents, and what stack do they use?",
+        groups=["Languages", "Web", "Cloud", "AI", "Data"],
+        over_time=["TypeScript", "Python", "LLMs", "AI agents", "RAG / embeddings", "AWS"],
+        generic_titles=set()),
+    "it": dict(
+        role_filter="IT roles only",
+        query="entry level help desk or IT support role with Microsoft 365 and Active Directory",
+        hybrid_help="Off = embeddings only. Hybrid also rewards exact names like 'Intune' or 'Hyper-V'.",
+        question="Which entry level IT support roles are hiring, and which tools and certifications do they ask for?",
+        groups=["Microsoft", "Networking", "Infrastructure", "Service desk", "Certifications"],
+        over_time=["Microsoft 365", "Active Directory", "Intune", "Azure", "PowerShell", "CompTIA A+"],
+        generic_titles={"It Specialist", "It Support Specialist", "It Technician", "It Support", "It Analyst",
+                        "It Administrator", "Help Desk Technician"}),
+}[config.FIELD]
+SKILL_TABLE = skills.for_field()
+
 POSTED_WINDOWS = {"Any time": 0, "Past week": 7, "Past month": 30, "Past 3 months": 90}
 
 # --- sidebar filters ----------------------------------------------------------------
 with st.sidebar:
     st.header("Filters")
-    software_only = st.checkbox("Software roles only", True)
+    software_only = st.checkbox(UI["role_filter"], True)
     remote_only = st.checkbox("Remote only", False)
     levels = st.multiselect("Level (from title)", LEVELS, default=["entry", "unspecified"],
                             help="'unspecified' = the title names no level; many entry roles look like that.")
@@ -116,7 +138,7 @@ def area_names(pts: pd.DataFrame) -> dict[str, str]:
     out = {}
     for lab, g in pts[pts["cluster"] >= 0].groupby("label"):
         vc = g["title"].map(_norm_title).value_counts()
-        specific = [t for t, n in vc.items() if t and t not in _GENERIC_TITLES and len(t.split()) > 1 and n >= 3]
+        specific = [t for t, n in vc.items() if t and t not in _GENERIC_TITLES | UI["generic_titles"] and len(t.split()) > 1 and n >= 3]
         out[lab] = specific[0] if specific else " / ".join(lab.split(" / ")[:2]).title()
     return out
 
@@ -156,9 +178,9 @@ tabs = st.tabs(["Search", "Match my resume", "Where the jobs are", "Skill trends
 
 # --- Search ---------------------------------------------------------------------------
 with tabs[0]:
-    q = st.text_input("Describe the job you want", "remote new grad roles using Next.js and LLM agents")
+    q = st.text_input("Describe the job you want", UI["query"])
     hybrid = st.toggle("Hybrid (semantic + keyword)", True,
-                       help="Off = embeddings only. Hybrid also rewards exact names like 'Next.js'.")
+                       help=UI["hybrid_help"])
     if sim := st.session_state.get("similar_id"):
         st.subheader(f"Similar to: {st.session_state['similar_title']}")
         if st.button("Clear"):
@@ -288,8 +310,8 @@ with tabs[3]:
     sub = df[f.mask(df)]
     d = demand(sub)
     st.subheader(f"Skill demand in the {ix.latest_date} snapshot ({len(sub):,} postings)")
-    grp = st.multiselect("Groups", sorted({g for g, _ in skills.SKILLS.values()}),
-                         default=["Languages", "Web", "Cloud", "AI", "Data"])
+    grp = st.multiselect("Groups", sorted({g for g, _ in SKILL_TABLE.values()}),
+                         default=UI["groups"])
     d = d[d["group"].isin(grp)].head(30)
     fig = px.bar(d.sort_values("share"), x="share", y="skill", color="group", orientation="h",
                  labels={"share": "% of postings that mention it", "skill": ""}, height=720)
@@ -297,8 +319,8 @@ with tabs[3]:
     st.plotly_chart(fig)
 
     over = over_time(config.DB, software_only=software_only, levels=levels or None)
-    picks = st.multiselect("Skills to plot over time", list(skills.SKILLS),
-                           default=["TypeScript", "Python", "LLMs", "AI agents", "RAG / embeddings", "AWS"])
+    picks = st.multiselect("Skills to plot over time", list(SKILL_TABLE),
+                           default=UI["over_time"])
     if over["date"].nunique() > 1:
         st.subheader("Share of live postings, by daily snapshot")
         fig = px.line(over[over["skill"].isin(picks)], x="date", y="share", color="skill", markers=True,
@@ -398,7 +420,7 @@ with tabs[5]:
     else:
         st.caption(("✅ " if ok else "⚠️ ") + msg)
     question = st.text_input("Ask about the postings (uses the sidebar filters)",
-                             "Which remote new grad roles mention LLM agents, and what stack do they use?")
+                             UI["question"])
     if st.button("Ask", type="primary", disabled=not ok) and question.strip():
         out = st.empty()
         acc: list[str] = []

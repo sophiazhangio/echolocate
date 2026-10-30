@@ -71,8 +71,17 @@ _LEVELS = [
 LEVELS = ["entry", "unspecified", "intern", "senior+"]
 
 
+# How IT postings mark entry level ("Help Desk Technician - Tier 1", "Specialist I"); only used
+# when the field is "it", so software results stay exactly as they were.
+_IT_ENTRY = re.compile(r"\b(technician|specialist|analyst|administrator|support)\s+(i|1)\b"
+                       r"|\blevel[- ]?(1|i)\b|\btier[- ]?(1|i|one)\b")
+
+
 def level(title: str) -> str:
+    from . import config
     t = title.lower()
+    if config.FIELD == "it" and _IT_ENTRY.search(t) and not re.search(_LEVELS[1][1], t):
+        return "entry"
     for name, pat in _LEVELS:
         if re.search(pat, t):
             return name
@@ -95,6 +104,29 @@ def is_software(title: str) -> bool:
     if _NOT_SOFTWARE.search(t):
         return bool(re.search(r"\bsoftware\b", t))
     return bool(_SOFTWARE.search(t) or _ENGINEER.search(t))
+
+
+_IT = re.compile(r"\b(it|i\.t\.|help ?desk|service ?desk|desktop|deskside|end[- ]?user|endpoint|"
+                 r"system(s)? (administrator|admin|engineer|analyst|specialist)|sys ?admin|"
+                 r"network (administrator|admin|engineer|technician|analyst|specialist)|"
+                 r"technical support|tech support|support (technician|specialist|analyst|engineer)|"
+                 r"infrastructure (administrator|engineer|analyst|specialist)|"
+                 r"microsoft 365|m365|o365|active directory|identity (administrator|engineer)|"
+                 r"cloud (administrator|admin)|windows (administrator|engineer)|"
+                 r"noc|msp|computer (technician|support)|field (technician|service technician))\b")
+_NOT_IT = re.compile(r"\b(sales|account (executive|manager)|recruit\w*|marketing|mechanical|electrical|civil|"
+                     r"nurse|medical|clinical|warehouse|driver|attorney|accountant)\b")
+
+
+def is_it(title: str) -> bool:
+    """Rough "is this an IT support / systems / network administration role" check."""
+    t = title.lower()
+    return bool(_IT.search(t)) and not _NOT_IT.search(t)
+
+
+def in_field(title: str, field: str = "software") -> bool:
+    """The role filter behind "Software roles only" / "IT roles only"."""
+    return is_it(title) if field == "it" else is_software(title)
 
 
 class ResumeError(ValueError):

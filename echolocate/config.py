@@ -28,16 +28,40 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
 
 
+FIELDS = ("software", "it")
+
+
+def _job_radar_config() -> dict:
+    """job-radar's settings: config.local.json if present, else config.json."""
+    for name in ("config.local.json", "config.json"):
+        cfg = JOB_RADAR / name
+        if cfg.exists():
+            try:
+                return json.loads(cfg.read_text())
+            except ValueError:
+                return {}
+    return {}
+
+
+def field() -> str:
+    """Which kind of job this install is for: "software" (default) or "it".
+
+    ECHO_FIELD wins, then job-radar's "field" setting. The hosted demo is always software.
+    """
+    if DEMO:
+        return "software"
+    f = (os.environ.get("ECHO_FIELD") or _job_radar_config().get("field") or "software").strip().lower()
+    return f if f in FIELDS else "software"
+
+
+FIELD = field()
+
+
 def resume_path() -> Path | None:
     """The resume PDF that job-radar is configured to use (config.local.json, else config.json)."""
     if DEMO:
         return None
     if p := os.environ.get("ECHO_RESUME"):
         return Path(p).expanduser()
-    for name in ("config.local.json", "config.json"):
-        cfg = JOB_RADAR / name
-        if cfg.exists():
-            resume = json.loads(cfg.read_text()).get("resume")
-            if resume:
-                return (JOB_RADAR / resume).resolve()
-    return None
+    resume = _job_radar_config().get("resume")
+    return (JOB_RADAR / resume).resolve() if resume else None

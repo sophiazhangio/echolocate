@@ -35,7 +35,7 @@ def _add_filters(p):
     p.add_argument("--company")
     p.add_argument("--since", help="posted on or after YYYY-MM-DD")
     p.add_argument("--include", action="append", help="term that must appear; repeatable")
-    p.add_argument("--any-role", action="store_true", help="include non-software roles")
+    p.add_argument("--any-role", action="store_true", help="include roles outside the configured field (software or IT)")
     p.add_argument("-k", type=int, default=15)
 
 

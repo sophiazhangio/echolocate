@@ -66,13 +66,72 @@ SKILLS: dict[str, tuple[str, str]] = {
     "Microservices": ("Practice", r"micro-?services"),
 }
 
-_COMPILED = {name: re.compile(pat) for name, (_, pat) in SKILLS.items()}
+# IT support / systems / network administration (used when the field setting is "it").
+IT_SKILLS: dict[str, tuple[str, str]] = {
+    "Windows Server": ("Microsoft", r"windows server"),
+    "Windows 10/11": ("Microsoft", r"windows (10|11)\b|windows desktop"),
+    "Active Directory": ("Microsoft", r"active directory|\bad ds\b|\badds\b|group policy|\bgpo\b"),
+    "Entra ID / Azure AD": ("Microsoft", r"\bentra\b|azure ad\b|azure active directory"),
+    "Microsoft 365": ("Microsoft", r"microsoft 365|\bm365\b|office 365|\bo365\b"),
+    "Exchange": ("Microsoft", r"\bexchange( online| server)?\b(?! rate)"),
+    "Intune": ("Microsoft", r"\bintune\b|endpoint manager|\bmem\b"),
+    "SCCM / MECM": ("Microsoft", r"\bsccm\b|\bmecm\b|configuration manager"),
+    "Teams / SharePoint": ("Microsoft", r"\bsharepoint\b|microsoft teams|\bonedrive\b"),
+    "macOS / Jamf": ("Endpoints", r"\bjamf\b|\bmacos\b|mac os|apple devices"),
+    "Linux": ("Endpoints", r"\blinux\b|\bubuntu\b|\brhel\b|red hat"),
+    "Printers / peripherals": ("Endpoints", r"\bprinters?\b|peripherals?"),
+    "Mobile devices / MDM": ("Endpoints", r"\bmdm\b|mobile device management|iphones?|ipads?"),
+    "Imaging / deployment": ("Endpoints", r"\bimaging\b|\bautopilot\b|\bpxe\b|os deployment"),
+    "VMware": ("Infrastructure", r"\bvmware\b|\bvsphere\b|\besxi\b"),
+    "Hyper-V": ("Infrastructure", r"hyper-?v\b"),
+    "Backup / DR": ("Infrastructure", r"\bbackups?\b|disaster recovery|\bveeam\b|\bdatto\b"),
+    "Storage / SAN": ("Infrastructure", r"\bsan\b|\bnas\b|storage arrays?"),
+    "DNS / DHCP": ("Networking", r"\bdns\b|\bdhcp\b"),
+    "TCP/IP": ("Networking", r"tcp/ip|\bsubnet"),
+    "Switches / routers": ("Networking", r"\bswitch(es|ing)\b|\brouters?\b|\bvlans?\b"),
+    "Firewalls": ("Networking", r"firewalls?|\bfortinet\b|fortigate|palo alto networks|\bsonicwall\b"),
+    "VPN": ("Networking", r"\bvpns?\b"),
+    "Wi-Fi": ("Networking", r"wi-?fi|wireless (network|access)|\bmeraki\b"),
+    "Cisco": ("Networking", r"\bcisco\b|\bccna\b"),
+    "Azure": ("Cloud", r"\bazure\b"),
+    "AWS": ("Cloud", r"\baws\b|amazon web services"),
+    "Google Workspace": ("Cloud", r"google workspace|g suite|gsuite"),
+    "Okta / SSO": ("Cloud", r"\bokta\b|single sign-on|\bsso\b"),
+    "PowerShell": ("Scripting", r"powershell"),
+    "Bash / shell": ("Scripting", r"\bbash\b|shell script"),
+    "Python": ("Scripting", r"\bpython\b"),
+    "Help desk / ticketing": ("Service desk", r"help ?desk|service ?desk|ticketing|\btickets?\b"),
+    "ServiceNow": ("Service desk", r"servicenow"),
+    "Jira Service Management": ("Service desk", r"jira service|\bjsm\b"),
+    "ITIL": ("Service desk", r"\bitil\b"),
+    "RMM / PSA": ("Service desk", r"\brmm\b|\bpsa\b|connectwise|\bkaseya\b|\bninjaone\b|\bn-able\b"),
+    "Remote support": ("Service desk", r"remote (support|desktop|assistance)|\bteamviewer\b|\brdp\b"),
+    "Asset management": ("Service desk", r"asset management|inventory of (hardware|devices)"),
+    "Endpoint security / EDR": ("Security", r"\bedr\b|crowdstrike|sentinelone|defender for endpoint|antivirus"),
+    "MFA": ("Security", r"\bmfa\b|multi-?factor|\b2fa\b"),
+    "Patching": ("Security", r"\bpatch(ing|es)?\b|vulnerability management"),
+    "CompTIA A+": ("Certifications", r"comptia a\+|\ba\+ cert"),
+    "CompTIA Network+": ("Certifications", r"network\+"),
+    "CompTIA Security+": ("Certifications", r"security\+"),
+    "Microsoft certifications": ("Certifications", r"\bmd-?102\b|\bms-?102\b|\baz-?104\b|\baz-?900\b|\bmcsa\b|microsoft certified"),
+}
+
+_BY_FIELD = {"software": SKILLS, "it": IT_SKILLS}
+_COMPILED = {f: {name: re.compile(pat) for name, (_, pat) in table.items()} for f, table in _BY_FIELD.items()}
 
 
-def find(text: str) -> list[str]:
+def for_field(field: str | None = None) -> dict[str, tuple[str, str]]:
+    """The skill table for a field ("software" or "it"); defaults to this install's field."""
+    from . import config
+    return _BY_FIELD.get(field or config.FIELD, SKILLS)
+
+
+def find(text: str, field: str | None = None) -> list[str]:
+    from . import config
     t = text.lower()
-    return [name for name, rx in _COMPILED.items() if rx.search(t)]
+    return [name for name, rx in _COMPILED.get(field or config.FIELD, _COMPILED["software"]).items()
+            if rx.search(t)]
 
 
 def group(name: str) -> str:
-    return SKILLS[name][0]
+    return (SKILLS.get(name) or IT_SKILLS.get(name) or ("Other", ""))[0]
