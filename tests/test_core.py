@@ -4,10 +4,10 @@ import zlib
 import numpy as np
 import pytest
 
-from job_market_search import skills, store
-from job_market_search.search import Filters, Searcher, _rrf
-from job_market_search.text import chunk, is_software, level
-from job_market_search.trends import demand, over_time, rising
+from echolocate import skills, store
+from echolocate.search import Filters, Searcher, _rrf
+from echolocate.text import chunk, is_software, level
+from echolocate.trends import demand, over_time, rising
 
 
 class FakeEmbedder:
@@ -130,7 +130,7 @@ def test_trends(built):
 
 
 def test_parse_query_turns_words_into_filters():
-    from job_market_search.search import parse_query
+    from echolocate.search import parse_query
     q, f, notes = parse_query("remote new grad roles using Next.js", Filters())
     assert f.remote_only and f.levels == ["entry", "unspecified"]
     assert "remote" not in q.lower() and "roles" not in q.lower() and "Next.js" in q
@@ -153,8 +153,14 @@ def test_duplicate_roles_collapse(tmp_path):
 
 
 def test_rag_gather_applies_question_filters(built):
-    from job_market_search.rag import gather
+    from echolocate.rag import gather
     db, _ = built
     s = Searcher(store.Index.load(db), FakeEmbedder())
     got = gather(s, "which remote roles use React?", Filters())
     assert got and all(x["remote"] for x in got)
+
+
+def test_or_remote_is_not_a_filter():
+    from echolocate.search import parse_query
+    q, f, notes = parse_query("frontend React in Irvine or remote", Filters())
+    assert not f.remote_only and not notes and "remote" in q

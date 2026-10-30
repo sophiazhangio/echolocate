@@ -219,7 +219,7 @@ class Index:
         con.close()
         rows = [r for r in rows if r[0] in pos]
         if not rows:
-            raise SystemExit("The index is empty. Run `python -m job_market_search index` first.")
+            raise SystemExit("The index is empty. Run `python -m echolocate index` first.")
         owner = np.fromiter((pos[r[0]] for r in rows), dtype=np.int64, count=len(rows))
         vecs = np.stack([np.frombuffer(r[2], dtype=np.float16) for r in rows]).astype(np.float32)
         pv = np.zeros((len(df), vecs.shape[1]), dtype=np.float32)

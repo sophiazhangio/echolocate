@@ -77,6 +77,8 @@ def parse_query(query: str, filters: Filters) -> tuple[str, Filters, list[str]]:
     for pat, what in _INTENTS:
         if not re.search(pat, q, re.I):
             continue
+        if what == "remote" and re.search(r"\bor\s+(fully\s+)?remote\b|\bremote\s+or\b", q, re.I):
+            continue  # "Irvine or remote" is a preference, not a remote-only filter
         if what == "remote" and not filters.remote_only:
             filters = replace(filters, remote_only=True)
             notes.append("remote only")

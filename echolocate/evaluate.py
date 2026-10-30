@@ -5,7 +5,7 @@ a posting is relevant (title pattern + description pattern). The rules are keywo
 which favours the keyword retriever a little; treat the numbers as a sanity check that
 shows the trade-offs, not as a leaderboard.
 
-    python -m job_market_search.evaluate
+    python -m echolocate.evaluate
 """
 
 from __future__ import annotations

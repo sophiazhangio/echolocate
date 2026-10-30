@@ -1,5 +1,5 @@
 [project]
-name = "job-market-search"
+name = "echolocate"
 version = "0.1.0"
 description = "Local semantic search, resume matching, skill trends and RAG Q&A over ~11k live software job postings."
 readme = "README.md"
@@ -21,14 +21,14 @@ dependencies = [
 dev = ["pytest>=8", "playwright>=1.40"]
 
 [project.scripts]
-jms = "job_market_search.__main__:main"
+echolocate = "echolocate.__main__:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["job_market_search"]
+packages = ["echolocate"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

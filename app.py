@@ -8,12 +8,12 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from job_market_search import config, skills
-from job_market_search.search import Filters, Searcher
-from job_market_search.store import Index, SentenceEmbedder
-from job_market_search.text import LEVELS, read_resume
+from echolocate import config, skills
+from echolocate.search import Filters, Searcher
+from echolocate.store import Index, SentenceEmbedder
+from echolocate.text import LEVELS, read_resume
 
-st.set_page_config(page_title="Job Market Search", page_icon="🔎", layout="wide")
+st.set_page_config(page_title="echolocate", page_icon="🔎", layout="wide")
 
 
 @st.cache_resource(show_spinner="Loading index and embedding model ...")
@@ -26,7 +26,7 @@ def load(db_mtime: float):
 
 
 if not config.DB.exists():
-    st.error("No index yet. Run `python -m job_market_search index` first.")
+    st.error("No index yet. Run `python -m echolocate index` first.")
     st.stop()
 searcher = load(config.DB.stat().st_mtime)
 ix = searcher.ix
@@ -79,7 +79,8 @@ def show_results(res: pd.DataFrame, snippet: bool = False):
                 st.session_state["similar_title"] = f"{r['title']} · {r['company']}"
 
 
-st.title("Job Market Search")
+st.title("echolocate")
+st.markdown("*Find roles by meaning, not keywords.*")
 st.caption(f"Semantic search, resume matching and skill trends over {len(df):,} live postings from "
            f"{df['company'].nunique():,} companies (Greenhouse, Ashby, Lever). Everything runs locally.")
 
@@ -116,7 +117,7 @@ with tabs[1]:
         text = read_resume(default)
         st.caption("Using the resume set in job-radar's config")
     else:
-        st.warning("No resume found. Upload one, or set JMS_RESUME.")
+        st.warning("No resume found. Upload one, or set ECHO_RESUME.")
     if text:
         st.session_state["tab"] = "resume"
         res = searcher.similar_to_text(text, f, k)
@@ -127,7 +128,7 @@ with tabs[1]:
             show_results(res)
         with c2:
             st.subheader("Skills these postings ask for")
-            from job_market_search.trends import demand
+            from echolocate.trends import demand
             top = demand(df[f.mask(df)]).head(25)
             top["on resume"] = top["skill"].isin(have).map({True: "yes", False: "-"})
             st.dataframe(top[["skill", "share", "on resume"]].rename(columns={"share": "% of postings"}),
@@ -135,7 +136,7 @@ with tabs[1]:
 
 # --- Trends -----------------------------------------------------------------------------
 with tabs[2]:
-    from job_market_search.trends import by_posted_month, demand, over_time, rising
+    from echolocate.trends import by_posted_month, demand, over_time, rising
     sub = df[f.mask(df)]
     d = demand(sub)
     st.subheader(f"Skill demand in the {ix.latest_date} snapshot ({len(sub):,} postings)")
@@ -169,7 +170,7 @@ with tabs[2]:
 
 # --- Map --------------------------------------------------------------------------------
 with tabs[3]:
-    from job_market_search.clusters import cluster_map
+    from echolocate.clusters import cluster_map
     c1, c2 = st.columns([1, 3])
     method = c1.radio("Clustering", ["hdbscan", "kmeans"], help="HDBSCAN finds its own number of clusters "
                       "and leaves outliers unclustered; KMeans assigns everything to 20 clusters.")
@@ -193,7 +194,7 @@ with tabs[3]:
 
 # --- RAG --------------------------------------------------------------------------------
 with tabs[4]:
-    from job_market_search.rag import ask, gather, ollama_status
+    from echolocate.rag import ask, gather, ollama_status
     ok, msg = ollama_status()
     st.caption(("✅ " if ok else "⚠️ ") + msg)
     question = st.text_input("Ask about the postings (uses the sidebar filters)",

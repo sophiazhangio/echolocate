@@ -1,4 +1,6 @@
-# job-market-search
+# echolocate
+
+*Find roles by meaning, not keywords: the way a bat finds things in the dark by echo.* [job-radar](https://github.com/sophiazhangio/job-radar) sweeps the job boards; echolocate reads what it found.
 
 Semantic search, resume matching, skill-demand trends and RAG Q&A over every job posting that my [job-radar](https://github.com/sophiazhangio/job-radar) tool pulls each day: about **11,000 live postings from ~100 tech companies** (Greenhouse, Ashby and Lever public job boards).
 
@@ -20,8 +22,8 @@ Everything runs on a laptop. No paid APIs or API keys: embeddings come from `sen
 ## How it works
 
 ```
-job-radar (TypeScript)                     job-market-search (Python)
-  npm run scan -- --dump                     python -m job_market_search index
+job-radar (TypeScript)                     echolocate (Python)
+  npm run scan -- --dump                     python -m echolocate index
   └─ out/all/2026-10-29.jsonl  ───────────▶  ├─ ingest: upsert postings, record daily snapshot,
      one posting per line                    │          tag level, role family and skills
                                              ├─ strip company boilerplate, chunk (~100 words)
@@ -47,7 +49,7 @@ Some choices worth calling out:
 
 ## Evaluation
 
-There are no human relevance labels for job postings, so [`evaluate.py`](job_market_search/evaluate.py) pairs 15 queries with a rule that marks a posting relevant (for example *"data engineer building pipelines with Spark and Airflow"*: title contains "data" **and** the description mentions Spark or Airflow). Precision@10 on the 2026-10-29 snapshot (11,346 postings):
+There are no human relevance labels for job postings, so [`evaluate.py`](echolocate/evaluate.py) pairs 15 queries with a rule that marks a posting relevant (for example *"data engineer building pipelines with Spark and Airflow"*: title contains "data" **and** the description mentions Spark or Airflow). Precision@10 on the 2026-10-29 snapshot (11,346 postings):
 
 | Retriever | Mean P@10 |
 |---|---|
@@ -78,15 +80,15 @@ Two other checks that changed the design:
 Needs Python 3.10+ and a job-radar checkout next to this folder (`../job-radar`) that has run at least once with `--dump`.
 
 ```bash
-git clone https://github.com/sophiazhangio/job-market-search
-cd job-market-search
+git clone https://github.com/sophiazhangio/echolocate
+cd echolocate
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
 # in ../job-radar: write the full dump (or set "dump": true in its config.local.json)
 npm run scan -- --dump
 
-python -m job_market_search index     # first run downloads MiniLM (~90 MB) and embeds everything
+python -m echolocate index     # first run downloads MiniLM (~90 MB) and embeds everything
 streamlit run app.py                  # open http://localhost:8501
 ```
 
@@ -102,13 +104,13 @@ ollama pull llama3.2:3b
 ### Command line
 
 ```bash
-python -m job_market_search search "remote new grad roles using Next.js and LLM agents" --level entry --remote
-python -m job_market_search similar --resume            # uses the resume path in job-radar's config
-python -m job_market_search similar --id gh:quora:12345
-python -m job_market_search trends --level entry
-python -m job_market_search map --method hdbscan
-python -m job_market_search ask "Which remote roles mention RAG, and what stack do they use?"
-python -m job_market_search.evaluate
+python -m echolocate search "remote new grad roles using Next.js and LLM agents" --level entry --remote
+python -m echolocate similar --resume            # uses the resume path in job-radar's config
+python -m echolocate similar --id gh:quora:12345
+python -m echolocate trends --level entry
+python -m echolocate map --method hdbscan
+python -m echolocate ask "Which remote roles mention RAG, and what stack do they use?"
+python -m echolocate.evaluate
 pytest
 python scripts/screenshots.py   # regenerate docs/*.png from a running app (needs playwright + Chrome)
 ```
@@ -120,9 +122,9 @@ All optional, as environment variables:
 | Variable | Default | |
 |---|---|---|
 | `JOB_RADAR_DIR` | `../job-radar` | where to find dumps (`out/all/*.jsonl`) and the resume path |
-| `JMS_RESUME` | from job-radar config | resume PDF or text file |
-| `JMS_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | any sentence-transformers model; changing it re-embeds everything |
-| `JMS_DEVICE` | `cpu` | `mps` or `cuda` for a GPU |
+| `ECHO_RESUME` | from job-radar config | resume PDF or text file |
+| `ECHO_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | any sentence-transformers model; changing it re-embeds everything |
+| `ECHO_DEVICE` | `cpu` | `mps` or `cuda` for a GPU |
 | `OLLAMA_MODEL` | `llama3.2:3b` | any model you have pulled |
 
 ## Screenshots
@@ -135,7 +137,7 @@ All optional, as environment variables:
 ## Project layout
 
 ```
-job_market_search/
+echolocate/
   store.py      SQLite schema, ingest, incremental embedding, in-memory Index
   text.py       chunking, boilerplate removal, seniority and role-family rules, resume reading
   search.py     dense / sparse / hybrid search, filters, similar-to, resume matching, RAG retrieval

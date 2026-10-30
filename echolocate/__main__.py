@@ -1,4 +1,4 @@
-"""Command line: python -m job_market_search <command>
+"""Command line: python -m echolocate <command>
 
   index                          read new job-radar dumps and embed new/changed postings
   search "query" [filters]       hybrid semantic + keyword search
@@ -52,7 +52,7 @@ def _print(df: pd.DataFrame):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="job_market_search", description=__doc__,
+    ap = argparse.ArgumentParser(prog="echolocate", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("index")
