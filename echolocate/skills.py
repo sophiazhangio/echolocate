@@ -116,22 +116,20 @@ IT_SKILLS: dict[str, tuple[str, str]] = {
     "Microsoft certifications": ("Certifications", r"\bmd-?102\b|\bms-?102\b|\baz-?104\b|\baz-?900\b|\bmcsa\b|microsoft certified"),
 }
 
-_BY_FIELD = {"software": SKILLS, "it": IT_SKILLS}
-_COMPILED = {f: {name: re.compile(pat) for name, (_, pat) in table.items()} for f, table in _BY_FIELD.items()}
+def for_field(name: str | None = None) -> dict[str, tuple[str, str]]:
+    """The skill table of a profile (default: this install's profile)."""
+    from . import profiles
+    return profiles.get(name).skills
 
 
-def for_field(field: str | None = None) -> dict[str, tuple[str, str]]:
-    """The skill table for a field ("software" or "it"); defaults to this install's field."""
-    from . import config
-    return _BY_FIELD.get(field or config.FIELD, SKILLS)
-
-
-def find(text: str, field: str | None = None) -> list[str]:
-    from . import config
+def find(text: str, name: str | None = None) -> list[str]:
+    """Skills of the profile mentioned in `text`."""
+    from . import profiles
     t = text.lower()
-    return [name for name, rx in _COMPILED.get(field or config.FIELD, _COMPILED["software"]).items()
-            if rx.search(t)]
+    return [n for n, rx in profiles.get(name).compiled.items() if rx.search(t)]
 
 
-def group(name: str) -> str:
-    return (SKILLS.get(name) or IT_SKILLS.get(name) or ("Other", ""))[0]
+def group(name: str, profile: str | None = None) -> str:
+    from . import profiles
+    table = profiles.get(profile).skills
+    return (table.get(name) or SKILLS.get(name) or IT_SKILLS.get(name) or ("Other", ""))[0]

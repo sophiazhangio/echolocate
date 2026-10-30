@@ -219,25 +219,56 @@ def _index(n):
     return SimpleNamespace(postings=df, posting_vecs=vecs, latest_date="2026-10-29", model="fake")
 
 
-def test_it_field(tmp_path, monkeypatch):
+def test_profiles(tmp_path, monkeypatch):
     import json
-    from echolocate import config, skills
+    from echolocate import config, profiles, skills
     from echolocate.text import in_field, is_it, level
+    monkeypatch.setattr(config, "JOB_RADAR", tmp_path)  # no job-radar profiles: built-ins
+    profiles._load.cache_clear()
     assert is_it("Help Desk Technician - Tier 1") and is_it("Systems Administrator") and is_it("Director of IT")
     assert not is_it("Software Engineer") and not is_it("IT Sales Account Executive")
     assert in_field("Software Engineer", "software") and not in_field("Software Engineer", "it")
     assert {"Active Directory", "Intune", "CompTIA A+"} <= set(skills.find("AD, Intune and CompTIA A+ required "
                                                                            "(active directory)", "it"))
     assert skills.find("Python and React", "software") == ["Python", "React"]
-    # the field comes from job-radar's config.local.json; software behaviour is the default
-    (tmp_path / "config.local.json").write_text(json.dumps({"field": "IT"}))
-    monkeypatch.setattr(config, "JOB_RADAR", tmp_path)
+
+    # the profile name comes from job-radar's config.local.json; "field" is the older key
     monkeypatch.setattr(config, "DEMO", False)
+    monkeypatch.delenv("ECHO_PROFILE", raising=False)
     monkeypatch.delenv("ECHO_FIELD", raising=False)
-    assert config.field() == "it"
+    (tmp_path / "config.local.json").write_text(json.dumps({"profile": "Nursing"}))
+    assert config.profile() == "nursing"
+    (tmp_path / "config.local.json").write_text(json.dumps({"field": "it"}))
+    assert config.profile() == "it"
     monkeypatch.setattr(config, "DEMO", True)
-    assert config.field() == "software"  # the hosted demo never changes
-    monkeypatch.setattr(config, "FIELD", "software")
+    assert config.profile() == "software"  # the hosted demo never changes
+
+    monkeypatch.setattr(config, "PROFILE", "software")
     assert level("Support Specialist I (Merchant Care)") == "unspecified"
-    monkeypatch.setattr(config, "FIELD", "it")
-    assert level("Tier 1 Service Desk Analyst") == "entry"
+    monkeypatch.setattr(config, "PROFILE", "it")
+    assert level("Tier 1 Service Desk Analyst") == "entry" and level("IT Intern") == "intern"
+
+    # a career echolocate doesn't know, defined only in job-radar's profile.json
+    d = tmp_path / "profiles" / "nursing"
+    d.mkdir(parents=True)
+    (d / "profile.json").write_text(json.dumps({
+        "name": "nursing", "description": "Registered nurse roles", "searchTerms": ["registered nurse"],
+        "entryTitle": "new grad|nurse resident(?<suffix>cy)?",
+        "skills": [{"name": "BLS", "pattern": "\\bbls\\b", "core": True},
+                   {"name": "Epic", "pattern": "\\bepic\\b", "core": False},
+                   {"name": "Broken", "pattern": "(unclosed", "core": False}],
+        "defaults": {"includeTitleRe": ["\\bnurse\\b", "\\brn\\b"], "excludeTitle": ["senior", "sales"]}}))
+    profiles._load.cache_clear()
+    nurse = profiles.get("nursing")
+    assert nurse.source.endswith("profile.json") and set(nurse.compiled) == {"BLS", "Epic"}
+    assert skills.find("BLS and Epic charting", "nursing") == ["BLS", "Epic"]
+    assert in_field("Senior Registered Nurse", "nursing")      # level words are left to the level filter
+    assert not in_field("Nurse Staffing Sales Rep", "nursing")
+    assert not in_field("Software Engineer", "nursing")
+    assert nurse.ui["role_filter"] == "Nursing roles only" and nurse.ui["over_time"] == ["BLS", "Epic"]
+    # software never reads job-radar's file, so the demo and existing results stay put
+    (tmp_path / "profiles" / "software").mkdir()
+    (tmp_path / "profiles" / "software" / "profile.json").write_text(json.dumps({"skills": []}))
+    profiles._load.cache_clear()
+    assert profiles.get("software").source == "built-in"
+    profiles._load.cache_clear()

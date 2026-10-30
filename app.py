@@ -11,7 +11,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from echolocate import config, skills
+from echolocate import config, profiles, skills
 from echolocate.search import Filters, Searcher
 from echolocate.store import Index, SentenceEmbedder
 from echolocate.text import LEVELS, ResumeError, read_resume
@@ -61,26 +61,9 @@ searcher = load(config.DB.stat().st_mtime)
 ix = searcher.ix
 df = ix.postings
 
-# Texts and defaults that depend on the kind of job (config.FIELD; job-radar's "field" setting).
-UI = {
-    "software": dict(
-        role_filter="Software roles only",
-        query="remote new grad roles using Next.js and LLM agents",
-        hybrid_help="Off = embeddings only. Hybrid also rewards exact names like 'Next.js'.",
-        question="Which remote new grad roles mention LLM agents, and what stack do they use?",
-        groups=["Languages", "Web", "Cloud", "AI", "Data"],
-        over_time=["TypeScript", "Python", "LLMs", "AI agents", "RAG / embeddings", "AWS"],
-        generic_titles=set()),
-    "it": dict(
-        role_filter="IT roles only",
-        query="entry level help desk or IT support role with Microsoft 365 and Active Directory",
-        hybrid_help="Off = embeddings only. Hybrid also rewards exact names like 'Intune' or 'Hyper-V'.",
-        question="Which entry level IT support roles are hiring, and which tools and certifications do they ask for?",
-        groups=["Microsoft", "Networking", "Infrastructure", "Service desk", "Certifications"],
-        over_time=["Microsoft 365", "Active Directory", "Intune", "Azure", "PowerShell", "CompTIA A+"],
-        generic_titles={"It Specialist", "It Support Specialist", "It Technician", "It Support", "It Analyst",
-                        "It Administrator", "Help Desk Technician"}),
-}[config.FIELD]
+# Texts and defaults that depend on the career profile (job-radar's "profile" setting).
+PROFILE = profiles.get()
+UI = PROFILE.ui
 SKILL_TABLE = skills.for_field()
 
 POSTED_WINDOWS = {"Any time": 0, "Past week": 7, "Past month": 30, "Past 3 months": 90}
@@ -169,10 +152,14 @@ def show_results(res: pd.DataFrame, snippet: bool = False):
 st.title("echolocate")
 st.markdown("*Find roles by meaning, not keywords.*")
 st.caption(f"Semantic search, resume matching and skill trends over {len(df):,} live postings from "
-           f"{df['company'].nunique():,} companies (Greenhouse, Ashby, Lever). "
+           f"{df['company'].nunique():,} companies"
+           + (" (Greenhouse, Ashby, Lever). " if PROFILE.name == "software" else "' public job boards. ")
            + (f"Live demo on a fixed snapshot from {ix.latest_date}; "
               "[source and setup on GitHub](https://github.com/sophiazhangio/echolocate)."
               if config.DEMO else "Everything runs locally."))
+if PROFILE.name != "software":
+    st.caption(f"Career profile: **{md(UI['label'])}**" + (f" · {md(UI['description'])}" if UI.get("description") else "")
+               + f" · from `{'job-radar profiles/' + PROFILE.name if PROFILE.source != 'built-in' else 'built-in list'}`")
 
 tabs = st.tabs(["Search", "Match my resume", "Where the jobs are", "Skill trends", "Role map", "Ask (RAG)"])
 

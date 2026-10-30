@@ -78,9 +78,10 @@ _IT_ENTRY = re.compile(r"\b(technician|specialist|analyst|administrator|support)
 
 
 def level(title: str) -> str:
-    from . import config
+    from . import profiles
     t = title.lower()
-    if config.FIELD == "it" and _IT_ENTRY.search(t) and not re.search(_LEVELS[1][1], t):
+    entry = profiles.get().entry
+    if entry is not None and entry.search(t) and not re.search(_LEVELS[0][1] + "|" + _LEVELS[1][1], t):
         return "entry"
     for name, pat in _LEVELS:
         if re.search(pat, t):
@@ -124,9 +125,10 @@ def is_it(title: str) -> bool:
     return bool(_IT.search(t)) and not _NOT_IT.search(t)
 
 
-def in_field(title: str, field: str = "software") -> bool:
-    """The role filter behind "Software roles only" / "IT roles only"."""
-    return is_it(title) if field == "it" else is_software(title)
+def in_field(title: str, profile: str | None = None) -> bool:
+    """The role filter behind "Software roles only" / "IT roles only": does the title belong to the profile?"""
+    from . import profiles
+    return profiles.get(profile).role(title)
 
 
 class ResumeError(ValueError):

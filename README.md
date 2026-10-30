@@ -126,21 +126,28 @@ All optional, as environment variables:
 |---|---|---|
 | `JOB_RADAR_DIR` | `../job-radar` | where to find dumps (`out/all/*.jsonl`) and the resume path |
 | `ECHO_RESUME` | from job-radar config | resume PDF or text file |
-| `ECHO_FIELD` | from job-radar config, else `software` | `software` or `it` (see below) |
+| `ECHO_PROFILE` | from job-radar config, else `software` | career profile, e.g. `software` or `it` (see below) |
 | `ECHO_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | any sentence-transformers model; changing it re-embeds everything |
 | `ECHO_DEVICE` | `cpu` | `mps` or `cuda` for a GPU |
 | `OLLAMA_MODEL` | `llama3.2:3b` | any model you have pulled |
 
-### Using it for IT jobs
+### Using it for other careers (profiles)
 
-echolocate defaults to software engineering roles. For IT support, systems and network administration jobs, set `"field": "it"` in job-radar's `config.local.json` (or `ECHO_FIELD=it`), then rebuild the index with `python -m echolocate index`. That switches:
+echolocate follows job-radar's career profiles. Each profile is a folder in job-radar, `profiles/<name>/profile.json`, and job-radar's `config.local.json` picks one with `"profile": "<name>"` (default `software`). Rebuild after switching: `python -m echolocate index` re-tags postings for the new profile (nothing is re-embedded).
 
-- the role filter to **IT roles only** (help desk, service desk, desktop support, systems / network administrator, Microsoft 365 admin, field technician ...);
-- the skill list behind trends and resume matching to IT tools and certifications: Windows Server, Active Directory, Entra ID, Microsoft 365, Exchange, Intune, VMware, Hyper-V, PowerShell, DNS / DHCP, firewalls, VPN, backup, RMM / PSA, ServiceNow, ITIL, CompTIA A+ / Network+ / Security+ and more (`IT_SKILLS` in `echolocate/skills.py`);
-- entry-level detection to also read "Tier 1" and "Technician I";
-- role-map names and the example search and RAG questions.
+From `profile.json` echolocate reads:
 
-The dump format, search, RAG and the location map are the same for both. Changing the field only re-tags postings; nothing is re-embedded. The live demo always uses `software`. The evaluation set (`echolocate/evaluate.py`) is written for software queries.
+- `skills` (`name`, `pattern`, `core`, optional `group`): the vocabulary behind skill trends and resume matching. Without `group`, skills are grouped as core / other.
+- `defaults.includeTitleRe` / `includeTitle` and `excludeTitle`: which titles count for the **"<Profile> roles only"** filter. Level words in `excludeTitle` (senior, intern ...) are ignored, because the app has its own level filter.
+- `entryTitle`: extra entry-level title patterns, such as "Tier 1".
+- `description` and `searchTerms`: the profile line and the example search.
+
+Built-in profiles:
+
+- `software` always uses echolocate's own grouped, tuned list, so the live demo and existing results never change when job-radar's file is edited.
+- `it` (help desk, desktop support, systems / network administration) is used when job-radar has no `profiles/it/profile.json`. It covers Windows Server, Active Directory, Entra ID, Microsoft 365, Intune, VMware / Hyper-V, PowerShell, networking, firewalls, backup, RMM / PSA, ServiceNow, ITIL and CompTIA certifications.
+
+Any other name needs its own `profile.json`; a missing or unreadable file falls back to `software`. Search, RAG and the location map work the same for every profile. The evaluation set (`echolocate/evaluate.py`) is written for software queries.
 
 ## Screenshots
 
@@ -160,6 +167,7 @@ echolocate/
   skills.py     skill vocabulary (regex per skill)
   trends.py     demand counts, per-snapshot and per-month shares
   clusters.py   UMAP + HDBSCAN / KMeans role map with automatic labels
+  profiles.py   career profiles from job-radar's profiles/<name>/profile.json
   geo.py        free-text job locations -> cities with coordinates (offline GeoNames)
   rag.py        Ollama client and grounded prompt
   evaluate.py   precision@10 benchmark

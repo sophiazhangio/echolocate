@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,9 +29,6 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
 
 
-FIELDS = ("software", "it")
-
-
 def _job_radar_config() -> dict:
     """job-radar's settings: config.local.json if present, else config.json."""
     for name in ("config.local.json", "config.json"):
@@ -43,18 +41,22 @@ def _job_radar_config() -> dict:
     return {}
 
 
-def field() -> str:
-    """Which kind of job this install is for: "software" (default) or "it".
+def profile() -> str:
+    """Which career profile this install uses: job-radar's profiles/<name>/ (default "software").
 
-    ECHO_FIELD wins, then job-radar's "field" setting. The hosted demo is always software.
+    ECHO_PROFILE wins, then job-radar's "profile" setting. The older "field" setting and
+    ECHO_FIELD still work. The hosted demo is always "software".
     """
     if DEMO:
         return "software"
-    f = (os.environ.get("ECHO_FIELD") or _job_radar_config().get("field") or "software").strip().lower()
-    return f if f in FIELDS else "software"
+    cfg = _job_radar_config()
+    name = (os.environ.get("ECHO_PROFILE") or os.environ.get("ECHO_FIELD") or cfg.get("profile")
+            or cfg.get("field") or "software")
+    name = str(name).strip().lower()
+    return name if re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name) else "software"
 
 
-FIELD = field()
+PROFILE = profile()
 
 
 def resume_path() -> Path | None:

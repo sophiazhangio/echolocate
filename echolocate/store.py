@@ -100,7 +100,7 @@ def ingest(con, date: str, rows: Iterable[dict]) -> int:
                  last_seen=max(postings.last_seen, excluded.last_seen)""",
             (r["id"], r["company"], r["title"], r.get("location", ""), int(bool(r.get("remote"))),
              r.get("url", ""), r.get("posted", ""), r.get("pay", ""), desc, level(r["title"]),
-             int(in_field(r["title"], config.FIELD)), None, h, date, date))
+             int(in_field(r["title"])), None, h, date, date))
         con.execute("INSERT OR IGNORE INTO snapshots VALUES (?, ?)", (date, r["id"]))
         n += 1
     return n
@@ -117,24 +117,24 @@ def embed_pending(con, embedder: Embedder, log: Callable[[str], None] = print, b
     # Skill tags also use the stripped text, so "We are the leading platform for AI agents"
     # in a company blurb does not count as every posting asking for AI agents.
     # The role flag ("software" column; for IT installs it means "IT role") and skill tags
-    # follow config.FIELD, so changing the field takes effect on the next run.
+    # follow the active profile, so changing it takes effect on the next run.
     rows = con.execute("SELECT id, title, company, description, embedded_hash, skills, software "
                        "FROM postings").fetchall()
     common = boilerplate((r[2], r[3]) for r in rows)
     todo, retag, reflag = [], [], []
     for pid, title, company, desc, done, tags, flag in rows:
         body = strip_boilerplate(company, desc, common)
-        new_tags = ",".join(skills.find(f"{title}\n{body}", config.FIELD))
+        new_tags = ",".join(skills.find(f"{title}\n{body}"))
         if new_tags != tags:
             retag.append((new_tags, pid))
-        if int(in_field(title, config.FIELD)) != flag:
-            reflag.append((int(in_field(title, config.FIELD)), pid))
+        if int(in_field(title)) != flag:
+            reflag.append((int(in_field(title)), pid))
         h = text_hash(title, company, body)
         if h != done:
             todo.append((pid, title, company, body, h))
     con.executemany("UPDATE postings SET skills = ? WHERE id = ?", retag)
     con.executemany("UPDATE postings SET software = ? WHERE id = ?", reflag)
-    _set_meta(con, "field", config.FIELD)
+    _set_meta(con, "profile", config.PROFILE)
     con.commit()
     if not todo:
         return 0
