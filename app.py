@@ -13,7 +13,7 @@ import streamlit as st
 from echolocate import config, skills
 from echolocate.search import Filters, Searcher
 from echolocate.store import Index, SentenceEmbedder
-from echolocate.text import LEVELS, read_resume
+from echolocate.text import LEVELS, ResumeError, read_resume
 
 st.set_page_config(page_title="echolocate", page_icon="🔎", layout="wide")
 
@@ -84,6 +84,29 @@ def md(text) -> str:
     return re.sub(r"([\\`*_\[\]$<>#|])", r"\\\1", str(text or ""))
 
 
+_GENERIC_TITLES = {"Software Engineer", "Engineer", "Software Developer", "Member Of Technical Staff",
+                   "Full Stack Engineer", "Software Engineer, New Grad"}
+
+
+def _norm_title(t: str) -> str:
+    t = re.sub(r"\(.*?\)|\[.*?\]", " ", t)
+    t = re.split(r"\s[-–—|:]\s|,", t)[0]
+    t = re.sub(r"\b(senior|sr\.?|staff|principal|lead|ii|iii|iv|i|\d+|phd|new grad(uate)?|intern(ship)?)\b",
+               " ", t, flags=re.I)
+    t = re.sub(r"\s+", " ", t).strip().title()
+    return re.sub(r"\bAi\b", "AI", re.sub(r"\bMl\b", "ML", re.sub(r"\bIos\b", "iOS", t)))
+
+
+def area_names(pts: pd.DataFrame) -> dict[str, str]:
+    """A readable name per map area: its most common specific job title, else its keywords."""
+    out = {}
+    for lab, g in pts[pts["cluster"] >= 0].groupby("label"):
+        vc = g["title"].map(_norm_title).value_counts()
+        specific = [t for t, n in vc.items() if t and t not in _GENERIC_TITLES and len(t.split()) > 1 and n >= 3]
+        out[lab] = specific[0] if specific else " / ".join(lab.split(" / ")[:2]).title()
+    return out
+
+
 def show_results(res: pd.DataFrame, snippet: bool = False):
     if res.empty:
         st.info("Nothing matches these filters.")
@@ -140,22 +163,33 @@ with tabs[1]:
              if config.DEMO else "Resume (PDF or text). Defaults to the one in job-radar's config.")
     up = st.file_uploader(label, type=["pdf", "txt", "md"])
     text = ""
-    if up is not None:
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d) / f"resume{Path(up.name).suffix.lower()}"
-            tmp.write_bytes(up.getvalue())
-            text = read_resume(tmp)
-        st.caption(f"Using uploaded {up.name}")
-    elif default and default.exists():
-        text = read_resume(default)
-        st.caption("Using the resume set in job-radar's config")
-    elif config.DEMO:
-        st.info("Upload a resume to see the postings closest to it and which in-demand skills it shows.")
-    else:
-        st.warning("No resume found. Upload one, or set ECHO_RESUME.")
+    try:
+        if up is not None:
+            with tempfile.TemporaryDirectory() as d:
+                tmp = Path(d) / f"resume{Path(up.name).suffix.lower()}"
+                tmp.write_bytes(up.getvalue())
+                text = read_resume(tmp)
+            st.caption(f"Using uploaded {up.name}")
+        elif default and default.exists():
+            text = read_resume(default)
+            st.caption("Using the resume set in job-radar's config")
+        elif config.DEMO:
+            st.info("Upload a resume to see the postings closest to it and which in-demand skills it shows.")
+        else:
+            st.warning("No resume found. Upload one, or set ECHO_RESUME.")
+    except ResumeError as e:
+        st.error(str(e))
+    except Exception:
+        st.error("Something went wrong while reading this file. Try a PDF exported from Word or Google Docs, "
+                 "or a .txt copy of your resume.")
     if text:
         st.session_state["tab"] = "resume"
-        res = searcher.similar_to_text(text, f, k)
+        try:
+            res = searcher.similar_to_text(text, f, k)
+        except Exception:
+            st.error("The resume was read, but matching it failed. Reload the page and try again.")
+            text = ""
+    if text:
         have = set(skills.find(text))
         c1, c2 = st.columns([3, 2])
         with c1:
@@ -214,18 +248,50 @@ with tabs[3]:
                "The first run takes about a minute; results are cached.")
     with st.spinner("Projecting with UMAP and clustering ..."):
         pts, clusters = cluster_map(ix, map_mask, method=method)
+    st.markdown("Each dot is one posting. Dots close together have similar job descriptions, so each "
+                "colored area is a kind of role; its name is written in the middle of it. The axes have no "
+                "meaning. Hover a dot to see the job, or pick an area below to highlight it.")
     pts["hover"] = pts["title"] + " · " + pts["company"]
     shown = pts[pts["cluster"] >= 0]
+    order = clusters["label"].tolist()  # biggest area first
+    names = area_names(pts)
+    choices = [f"{names.get(r.label, r.label)} · {r.label} ({r.postings})" for r in clusters.itertuples()]
+    focus = st.selectbox("Highlight an area", ["(all)"] + choices)
+    focus_label = None if focus == "(all)" else order[choices.index(focus)]
+    palette = px.colors.qualitative.Light24 + px.colors.qualitative.Dark24
+    colors = {lab: (palette[i % len(palette)] if focus_label in (None, lab) else "rgba(150,150,150,0.25)")
+              for i, lab in enumerate(order)}
     fig = px.scatter(shown, x="x", y="y", color="label", hover_name="hover", height=720,
-                     labels={"label": "cluster"}, render_mode="webgl")
+                     category_orders={"label": order}, color_discrete_map=colors,
+                     hover_data={"x": False, "y": False, "label": True},
+                     labels={"label": "area"}, render_mode="webgl")
     noise = pts[pts["cluster"] < 0]
-    if len(noise):
+    if len(noise) and focus_label is None:
         fig.add_scatter(x=noise["x"], y=noise["y"], mode="markers", name="(unclustered)",
-                        marker=dict(color="lightgray", size=3), hovertext=noise["hover"], hoverinfo="text")
-    fig.update_traces(marker=dict(size=4, opacity=0.75), selector=dict(mode="markers"))
-    fig.update_layout(xaxis_visible=False, yaxis_visible=False, legend=dict(font=dict(size=10)))
+                        marker=dict(color="rgba(150,150,150,0.35)", size=3), hovertext=noise["hover"],
+                        hoverinfo="text")
+    fig.update_traces(marker=dict(size=5, opacity=0.8), selector=dict(mode="markers"))
+    # write each area's name at its center so the map reads without the legend
+    for lab, g in shown.groupby("label"):
+        if focus_label not in (None, lab):
+            continue
+        keys = " · ".join(lab.split(" / ")[:2])
+        fig.add_annotation(x=g["x"].median(), y=g["y"].median(), showarrow=False,
+                           text=f"<b>{names[lab]}</b>", hovertext=keys,
+                           font=dict(size=11 if focus_label is None else 15, color="white"),
+                           bgcolor="rgba(20,20,20,0.7)", borderpad=3)
+    # zoom to where the dots are; a few far-off outliers would otherwise squeeze the map
+    def span(v):
+        lo, hi = v.quantile(0.01), v.quantile(0.99)
+        pad = (hi - lo) * 0.08
+        return [lo - pad, hi + pad]
+    fig.update_layout(xaxis_visible=False, yaxis_visible=False, showlegend=False,
+                      xaxis_range=span(shown["x"]), yaxis_range=span(shown["y"]),
+                      margin=dict(l=0, r=0, t=10, b=0))
     st.plotly_chart(fig)
-    st.dataframe(clusters, hide_index=True)
+    st.markdown("**What is in each area**")
+    table = clusters.assign(area=clusters["label"].map(names)).rename(columns={"label": "keywords"})
+    st.dataframe(table[["area", "keywords", "postings", "top companies", "top skills"]], hide_index=True)
 
 # --- RAG --------------------------------------------------------------------------------
 with tabs[4]:
