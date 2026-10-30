@@ -4,6 +4,8 @@
 
 Semantic search, resume matching, skill-demand trends and RAG Q&A over every job posting that my [job-radar](https://github.com/sophiazhangio/job-radar) tool pulls each day: about **11,000 live postings from ~100 tech companies** (Greenhouse, Ashby and Lever public job boards).
 
+**Live demo: [echolocate.streamlit.app](https://echolocate.streamlit.app/)** (a fixed 2026-10-29 snapshot on a free CPU server; the first visit after a quiet spell takes a minute to wake up, and RAG answers need Ollama locally).
+
 Everything runs on a laptop. No paid APIs or API keys: embeddings come from `sentence-transformers` (all-MiniLM-L6-v2), the vectors live in SQLite + NumPy, and answers come from a local Llama 3.2 3B model through [Ollama](https://ollama.com).
 
 ![Search](docs/search.png)
