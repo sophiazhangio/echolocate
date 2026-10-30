@@ -49,12 +49,13 @@ def _fold(s: str) -> str:
 def _tables():
     import geonamescache
     gc = geonamescache.GeonamesCache(min_city_population=15000)
-    cities = list(gc.get_cities().values())
     by_name: dict[str, list[dict]] = {}
-    for c in cities:
+    keep = ("geonameid", "name", "countrycode", "admin1code", "population", "latitude", "longitude")
+    for full in gc.get_cities().values():
+        c = {k: full[k] for k in keep}  # the full records (alternate names etc.) take ~300 MB
         keys = {_fold(c["name"])}
         if c["population"] >= 1_000_000:  # well-known alternate spellings of big cities only
-            keys |= {_fold(a) for a in c["alternatenames"] if a.isascii() and len(a) > 3}
+            keys |= {_fold(a) for a in full["alternatenames"] if a.isascii() and len(a) > 3}
         for k in keys:
             by_name.setdefault(k, []).append(c)
     for alias, target in ALIASES.items():

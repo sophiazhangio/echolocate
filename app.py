@@ -26,7 +26,13 @@ def embedder(model: str) -> SentenceEmbedder:
     return e
 
 
-@st.cache_resource(show_spinner="Loading index ...", max_entries=2)
+@st.cache_resource
+def loaded_db() -> dict:
+    """Which index is in memory (shared by every visitor on this server)."""
+    return {"db": None}
+
+
+@st.cache_resource(show_spinner="Loading index ...", max_entries=1)
 def load(db: str, db_mtime: float):
     ix = Index.load(Path(db))
     s = Searcher(ix, embedder(ix.model))
@@ -213,6 +219,13 @@ if not config.DB.exists():
         else:
             refresh(label)
     st.stop()
+# One index at a time: the hosted server has about 1 GB, and two indexes plus the model don't fit.
+_current = loaded_db()
+if _current["db"] not in (None, str(config.DB)):
+    load.clear()
+    import gc
+    gc.collect()
+_current["db"] = str(config.DB)
 searcher = load(str(config.DB), config.DB.stat().st_mtime)
 ix = searcher.ix
 df = ix.postings
@@ -401,7 +414,7 @@ with tabs[1]:
                          hide_index=True, height=600)
 
 # --- Where ------------------------------------------------------------------------------
-@st.cache_resource(show_spinner="Placing postings on the map ...")
+@st.cache_resource(show_spinner="Placing postings on the map ...", max_entries=1)
 def all_cities(profile: str, date_: str) -> pd.DataFrame:
     from echolocate.geo import city_table
     return city_table(df)
