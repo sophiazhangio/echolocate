@@ -19,11 +19,17 @@ from echolocate.text import LEVELS, ResumeError, read_resume
 st.set_page_config(page_title="echolocate", page_icon="🔎", layout="wide")
 
 
-@st.cache_resource(show_spinner="Loading index and embedding model ...")
-def load(db_mtime: float):
-    ix = Index.load()
-    s = Searcher(ix, SentenceEmbedder(ix.model))
-    s.embedder.encode(["warm up"])
+@st.cache_resource(show_spinner="Loading the embedding model ...")
+def embedder(model: str) -> SentenceEmbedder:
+    e = SentenceEmbedder(model)
+    e.encode(["warm up"])
+    return e
+
+
+@st.cache_resource(show_spinner="Loading index ...", max_entries=2)
+def load(db: str, db_mtime: float):
+    ix = Index.load(Path(db))
+    s = Searcher(ix, embedder(ix.model))
     s._sparse()
     return s
 
@@ -52,12 +58,98 @@ def download_demo_data():
     bar.empty()
 
 
+NEW_PROFILE = "+ New career type ..."
+
+
+def refresh(label: str) -> None:
+    """Fetch today's postings with job-radar, then add them to the index."""
+    from echolocate import jobradar
+    from echolocate.store import build
+    with st.status(f"Fetching {label} postings from job boards (about a minute) ...", expanded=True) as box:
+        r = jobradar.dump(config.PROFILE)
+        if not r.get("ok"):
+            box.update(label="Fetching failed", state="error")
+            st.error(r.get("error", "job-radar failed."))
+            return
+        st.write(f"Saved {r.get('postings', 0):,} postings.")
+        box.update(label="Adding them to the index (new postings only; the first time takes a while) ...")
+        try:
+            stats = build(embedder=embedder(config.MODEL), log=st.write)
+        except SystemExit as e:
+            box.update(label="Indexing failed", state="error")
+            st.error(str(e))
+            return
+        box.update(label=f"Done: {stats['postings']:,} postings indexed.", state="complete")
+    load.clear()
+    st.rerun()
+
+
+def new_profile_page() -> None:
+    from echolocate import jobradar
+    from echolocate.rag import ollama_status
+    st.title("New career type")
+    st.markdown("Describe the jobs in plain words. A local Llama model drafts the job titles, skills and a starting "
+                "list of companies; every company board is checked live and broken ones are dropped. It takes "
+                "1-3 minutes and costs nothing. You can edit the draft later in job-radar's `profiles/` folder.")
+    ok, msg = ollama_status()
+    if not ok:
+        st.warning(msg)
+    name = st.text_input("Short name", placeholder="nursing").strip().lower()
+    desc = st.text_area("What kind of jobs?", placeholder="Entry level registered nurse roles in hospitals and "
+                                                          "clinics around Orange County and Los Angeles")
+    if st.button("Create", type="primary", disabled=not (ok and name and desc.strip())):
+        with st.status("Drafting with the local model ...", expanded=True) as box:
+            r = jobradar.new_profile(name, desc.strip())
+            if not r.get("ok"):
+                box.update(label="Could not create it", state="error")
+                st.error(r.get("error", "job-radar failed."))
+                return
+            box.update(label=f"Created {name}", state="complete")
+        st.success(f"Draft ready: {r.get('skills', 0)} skills and {r.get('companies', 0)} companies."
+                   + (f" Dropped {len(r['dropped'])} that didn't work." if r.get("dropped") else ""))
+        st.session_state["switch_to"] = name  # picked up by the career-type picker on the next run
+        st.button(f"Open {name}")
+
+
+if not config.DEMO:
+    # Career type: job-radar's profiles. Each has its own dumps and its own index.
+    options = profiles.available()
+    names = [o["name"] for o in options]
+    labels = {o["name"]: o["label"] + (" (draft)" if o.get("draft") else "") for o in options}
+    if "switch_to" in st.session_state:
+        st.session_state["career"] = st.session_state.pop("switch_to")
+    if st.session_state.get("career") not in names + [NEW_PROFILE]:
+        st.session_state["career"] = config.DEFAULT_PROFILE if config.DEFAULT_PROFILE in names else names[0]
+    with st.sidebar:
+        pick = st.selectbox("Career type", names + [NEW_PROFILE], key="career",
+                            format_func=lambda n: labels.get(n, n),
+                            help="Each career type has its own job boards, skills and index (from job-radar's "
+                                 "profiles folder).")
+    if pick == NEW_PROFILE:
+        new_profile_page()
+        st.stop()
+    config.use_profile(pick)
+
 if config.DEMO and not config.DB.exists():
     download_demo_data()
 if not config.DB.exists():
-    st.error("No index yet. Run `python -m echolocate index` first.")
+    label = profiles.get().ui["label"]
+    st.title("echolocate")
+    from echolocate.store import dump_files
+    days = dump_files()
+    st.info(f"No {label} postings yet." + (f" job-radar has saved {len(days)} day(s) of them; add them to the index "
+                                           "to start." if days else " Fetch them from the job boards to start."))
+    if st.button(f"Index the saved {label} postings" if days else f"Fetch {label} postings", type="primary"):
+        if days:
+            from echolocate.store import build
+            with st.status("Building the index (the first time takes a few minutes) ...", expanded=True) as box:
+                build(embedder=embedder(config.MODEL), log=st.write)
+                box.update(label="Done", state="complete")
+            st.rerun()
+        else:
+            refresh(label)
     st.stop()
-searcher = load(config.DB.stat().st_mtime)
+searcher = load(str(config.DB), config.DB.stat().st_mtime)
 ix = searcher.ix
 df = ix.postings
 
@@ -96,6 +188,10 @@ with st.sidebar:
                 must_include=[x.strip() for x in include.split(",") if x.strip()])
     n_match = int(f.mask(df).sum())
     st.caption(f"{n_match:,} of {len(df):,} postings match · snapshot {ix.latest_date} · {ix.model.split('/')[-1]}")
+    if not config.DEMO:
+        if st.button("Fetch today's postings", help="Runs job-radar for this career type, then indexes only "
+                                                     "what is new. Takes a minute or two."):
+            refresh(UI["label"])
 
 
 def md(text) -> str:
@@ -228,7 +324,7 @@ with tabs[1]:
 
 # --- Where ------------------------------------------------------------------------------
 @st.cache_resource(show_spinner="Placing postings on the map ...")
-def all_cities(_date: str) -> pd.DataFrame:
+def all_cities(profile: str, date_: str) -> pd.DataFrame:
     from echolocate.geo import city_table
     return city_table(df)
 
@@ -238,7 +334,7 @@ REGIONS = {"World": "world", "North America": "north america", "USA": "usa", "Eu
 with tabs[2]:
     try:
         sub = df[f.mask(df)]
-        ct = all_cities(ix.latest_date)
+        ct = all_cities(config.PROFILE, ix.latest_date)
         here = ct[ct["row"].isin(sub.index)]
         st.markdown("Each circle is a city. Bigger circles have more open postings that match the sidebar "
                     "filters; a posting listed in several cities counts in each. Hover a circle for its top "

@@ -20,12 +20,12 @@ def demand(postings: pd.DataFrame) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 
-def over_time(db: Path = config.DB, software_only: bool = True, levels: list[str] | None = None) -> pd.DataFrame:
+def over_time(db: Path | None = None, software_only: bool = True, levels: list[str] | None = None) -> pd.DataFrame:
     """Share (%) of live postings that mention each skill, for every snapshot date.
 
     Long format: date, skill, postings, total, share.
     """
-    con = sqlite3.connect(db)
+    con = sqlite3.connect(db or config.DB)
     q = """SELECT s.date, p.skills FROM snapshots s JOIN postings p ON p.id = s.id WHERE 1=1"""
     params: list = []
     if software_only:

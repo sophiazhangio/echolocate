@@ -175,3 +175,19 @@ def _load(name: str, job_radar: str) -> Profile:
 def get(name: str | None = None) -> Profile:
     """The profile by name, or this install's active one (config.PROFILE)."""
     return _load(name or config.PROFILE, str(config.JOB_RADAR))
+
+
+def available() -> list[dict]:
+    """Career profiles to offer in the app: built-ins plus every job-radar profiles/<name>/profile.json."""
+    out = {n: {"name": n, "label": _builtin(n).ui["label"], "description": "", "draft": False} for n in ("software", "it")}
+    root = config.JOB_RADAR / "profiles"
+    for f in sorted(root.glob("*/profile.json")) if root.exists() else []:
+        try:
+            data = json.loads(f.read_text())
+        except (ValueError, OSError):
+            continue
+        name = f.parent.name
+        entry = out.get(name, {"name": name, "label": data.get("label") or name.replace("-", " ").title()})
+        entry.update(description=data.get("description", ""), draft=bool(data.get("draft")))
+        out[name] = entry
+    return list(out.values())

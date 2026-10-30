@@ -9,9 +9,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 JOB_RADAR = Path(os.environ.get("JOB_RADAR_DIR", ROOT.parent / "job-radar")).expanduser()
-DUMPS = Path(os.environ.get("ECHO_DUMPS", JOB_RADAR / "out" / "all")).expanduser()
-DATA = Path(os.environ.get("ECHO_DATA", ROOT / "data")).expanduser()
-DB = DATA / "index.sqlite"
+DATA_ROOT = Path(os.environ.get("ECHO_DATA", ROOT / "data")).expanduser()
+# DUMPS / DATA / DB belong to the active profile; use_profile() below sets them.
+DUMPS = DATA = DB = Path()
 
 # all-MiniLM-L6-v2: 384-dim, ~80 MB, fast on a laptop CPU or Apple GPU.
 MODEL = os.environ.get("ECHO_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
@@ -56,7 +56,28 @@ def profile() -> str:
     return name if re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name) else "software"
 
 
-PROFILE = profile()
+def dumps_dir(name: str) -> Path:
+    """Where job-radar writes a profile's daily dumps: out/all/ for software, out/all/<name>/ otherwise."""
+    if os.environ.get("ECHO_DUMPS"):
+        return Path(os.environ["ECHO_DUMPS"]).expanduser()
+    base = JOB_RADAR / "out" / "all"
+    return base if name == "software" else base / name
+
+
+def data_dir(name: str) -> Path:
+    """echolocate's index and caches for a profile: data/ for software, data/<name>/ otherwise."""
+    return DATA_ROOT if name == "software" else DATA_ROOT / name
+
+
+def use_profile(name: str) -> None:
+    """Switch the active profile (the app's career-type picker calls this)."""
+    global PROFILE, DUMPS, DATA, DB
+    PROFILE, DUMPS, DATA = name, dumps_dir(name), data_dir(name)
+    DB = DATA / "index.sqlite"
+
+
+PROFILE = DEFAULT_PROFILE = profile()  # DEFAULT_PROFILE: what job-radar's config says
+use_profile(PROFILE)
 
 
 def resume_path() -> Path | None:

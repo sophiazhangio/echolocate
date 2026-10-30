@@ -131,6 +131,12 @@ All optional, as environment variables:
 | `ECHO_DEVICE` | `cpu` | `mps` or `cuda` for a GPU |
 | `OLLAMA_MODEL` | `llama3.2:3b` | any model you have pulled |
 
+### Everyday use
+
+Start the app (`streamlit run app.py`), pick a **Career type** at the top of the sidebar and press **Fetch today's postings**. That runs job-radar for that career type (`npm run dump -- --profile <name>`) and indexes only what is new. A career type with no postings yet shows a button to fetch them. Choose **+ New career type ...** to describe a new kind of job in plain words; job-radar drafts its skills and company list with the local Llama model and checks every job board live.
+
+Each career type keeps its own data: job-radar writes `out/all/<date>.jsonl` for software and `out/all/<name>/<date>.jsonl` for the others, and echolocate keeps `data/index.sqlite` for software and `data/<name>/` for the others.
+
 ### Using it for other careers (profiles)
 
 echolocate follows job-radar's career profiles. Each profile is a folder in job-radar, `profiles/<name>/profile.json`, and job-radar's `config.local.json` picks one with `"profile": "<name>"` (default `software`). Rebuild after switching: `python -m echolocate index` re-tags postings for the new profile (nothing is re-embedded).
@@ -168,6 +174,7 @@ echolocate/
   trends.py     demand counts, per-snapshot and per-month shares
   clusters.py   UMAP + HDBSCAN / KMeans role map with automatic labels
   profiles.py   career profiles from job-radar's profiles/<name>/profile.json
+  jobradar.py   runs job-radar's fetch and new-profile commands from the app
   geo.py        free-text job locations -> cities with coordinates (offline GeoNames)
   rag.py        Ollama client and grounded prompt
   evaluate.py   precision@10 benchmark

@@ -57,14 +57,16 @@ class SentenceEmbedder:
                                  convert_to_numpy=True, show_progress_bar=progress).astype(np.float32)
 
 
-def connect(db: Path = config.DB) -> sqlite3.Connection:
+def connect(db: Path | None = None) -> sqlite3.Connection:
+    db = db or config.DB
     db.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(db)
     con.executescript(SCHEMA)
     return con
 
 
-def dump_files(folder: Path = config.DUMPS) -> list[tuple[str, Path]]:
+def dump_files(folder: Path | None = None) -> list[tuple[str, Path]]:
+    folder = folder or config.DUMPS
     out = []
     for f in sorted(folder.glob("*.jsonl")):
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", f.stem):
@@ -164,13 +166,15 @@ def embed_pending(con, embedder: Embedder, log: Callable[[str], None] = print, b
     return len(todo)
 
 
-def build(dumps: Path = config.DUMPS, db: Path = config.DB, embedder: Embedder | None = None,
+def build(dumps: Path | None = None, db: Path | None = None, embedder: Embedder | None = None,
           log: Callable[[str], None] = print) -> dict:
     """Ingest new or changed dump files, then embed whatever is pending."""
+    dumps, db = dumps or config.DUMPS, db or config.DB
     con = connect(db)
     files = dump_files(dumps)
     if not files:
-        raise SystemExit(f"No dumps found in {dumps}. Run `npm run scan -- --dump` in job-radar first.")
+        raise SystemExit(f"No dumps found in {dumps}. Run `npm run dump -- --profile {config.PROFILE}` "
+                         "in job-radar first.")
     ingested = 0
     for date, f in files:
         mtime = f.stat().st_mtime
@@ -210,7 +214,7 @@ class Index:
     model: str
 
     @classmethod
-    def load(cls, db: Path = config.DB, latest_only: bool = True) -> "Index":
+    def load(cls, db: Path | None = None, latest_only: bool = True) -> "Index":
         con = connect(db)
         model = _meta(con, "model") or config.MODEL
         snaps = pd.read_sql("SELECT date, id FROM snapshots", con)
