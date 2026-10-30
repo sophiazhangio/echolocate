@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import tempfile
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -60,6 +61,8 @@ searcher = load(config.DB.stat().st_mtime)
 ix = searcher.ix
 df = ix.postings
 
+POSTED_WINDOWS = {"Any time": 0, "Past week": 7, "Past month": 30, "Past 3 months": 90}
+
 # --- sidebar filters ----------------------------------------------------------------
 with st.sidebar:
     st.header("Filters")
@@ -69,11 +72,22 @@ with st.sidebar:
                             help="'unspecified' = the title names no level; many entry roles look like that.")
     location = st.text_input("Location contains", "", placeholder="los angeles, irvine, remote")
     company = st.text_input("Company contains", "")
-    since = st.text_input("Posted on or after", "", placeholder="2026-09-01")
+    snap = date.fromisoformat(ix.latest_date)
+    posted_range = st.selectbox("Posted", list(POSTED_WINDOWS) + ["Pick a date…"],
+                                help=f"Counted back from the snapshot date ({snap:%b %-d, %Y}).")
+    if posted_range == "Pick a date…":
+        first = pd.to_datetime(df["posted"], errors="coerce").min()
+        lo = first.date() if pd.notna(first) else snap - timedelta(days=365)
+        picked = st.date_input("Posted on or after", snap - timedelta(days=30), min_value=lo, max_value=snap,
+                               format="MM/DD/YYYY")
+        since = picked.isoformat() if picked else ""
+    else:
+        days = POSTED_WINDOWS[posted_range]
+        since = (snap - timedelta(days=days)).isoformat() if days else ""
     include = st.text_input("Must mention (comma separated)", "", placeholder="python, react")
     k = st.slider("Results", 5, 50, 15)
     f = Filters(software_only=software_only, remote_only=remote_only, levels=levels, location=location,
-                company=company, posted_after=since.strip(),
+                company=company, posted_after=since,
                 must_include=[x.strip() for x in include.split(",") if x.strip()])
     n_match = int(f.mask(df).sum())
     st.caption(f"{n_match:,} of {len(df):,} postings match · snapshot {ix.latest_date} · {ix.model.split('/')[-1]}")
