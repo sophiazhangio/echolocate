@@ -85,7 +85,11 @@ def main(argv=None):
             if not path or not path.exists():
                 sys.exit(f"Resume not found: {path}. Pass --resume PATH.")
             print(f"Resume: {path}\n")
-            _print(s.similar_to_resume(path, _filters(a), a.k))
+            from echolocate.text import ResumeError
+            try:
+                _print(s.similar_to_resume(path, _filters(a), a.k))
+            except ResumeError as e:
+                sys.exit(str(e))
     elif a.cmd == "trends":
         from .trends import demand, over_time
         mask = _filters(a).mask(ix.postings)

@@ -164,3 +164,19 @@ def test_or_remote_is_not_a_filter():
     from echolocate.search import parse_query
     q, f, notes = parse_query("frontend React in Irvine or remote", Filters())
     assert not f.remote_only and not notes and "remote" in q
+
+
+def test_read_resume_errors_are_readable(tmp_path):
+    import pytest
+    from echolocate.text import ResumeError, read_resume
+    bad = tmp_path / "r.pdf"
+    bad.write_bytes(b"not a pdf")
+    with pytest.raises(ResumeError, match="couldn't be opened"):
+        read_resume(bad)
+    empty = tmp_path / "r.txt"
+    empty.write_text("")
+    with pytest.raises(ResumeError, match="No readable text"):
+        read_resume(empty)
+    latin = tmp_path / "l.txt"
+    latin.write_bytes(("Python developer caf\xe9 " * 10).encode("latin-1"))
+    assert "Python" in read_resume(latin)

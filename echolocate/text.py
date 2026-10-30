@@ -97,8 +97,31 @@ def is_software(title: str) -> bool:
     return bool(_SOFTWARE.search(t) or _ENGINEER.search(t))
 
 
+class ResumeError(ValueError):
+    """A resume file that can't be read; the message is meant for the person who uploaded it."""
+
+
 def read_resume(path: Path) -> str:
+    """Plain text of a PDF or text resume. Raises ResumeError with a readable message."""
     if path.suffix.lower() == ".pdf":
         from pypdf import PdfReader
-        return "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
-    return path.read_text()
+        try:
+            reader = PdfReader(str(path))
+            if reader.is_encrypted and not reader.decrypt(""):
+                raise ResumeError("This PDF is password-protected. Export a copy without a password and try again.")
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        except ResumeError:
+            raise
+        except Exception as e:
+            raise ResumeError("This file couldn't be opened as a PDF. It may be damaged or not really a PDF; "
+                              "try exporting it again from Word or Google Docs.") from e
+    else:
+        data = path.read_bytes()
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            text = data.decode("latin-1")
+    if len(text.split()) < 20:
+        raise ResumeError("No readable text was found in this file. If it is a scanned image or a photo, "
+                          "export the resume as a text PDF (File > Save as PDF in Word or Google Docs).")
+    return text
