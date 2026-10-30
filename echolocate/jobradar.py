@@ -49,3 +49,8 @@ def new_profile(name: str, description: str, model: str | None = None) -> dict:
         return {"ok": False, "error": "Use lowercase letters, digits and dashes for the name, e.g. nursing or ux-design."}
     args = ["new-profile", "--", name, description] + (["--model", model] if model else [])
     return _run(args, timeout=15 * 60)
+
+
+def add_company(profile: str, url: str, name: str | None = None) -> dict:
+    """Check a careers page and add it to profiles/<profile>/companies.json."""
+    return _run(["add-company", "--", profile, url] + ([name] if name else []), timeout=3 * 60)

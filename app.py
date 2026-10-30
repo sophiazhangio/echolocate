@@ -105,8 +105,9 @@ def new_profile_page() -> None:
                 st.error(r.get("error", "job-radar failed."))
                 return
             box.update(label=f"Created {name}", state="complete")
-        st.success(f"Draft ready: {r.get('skills', 0)} skills and {r.get('companies', 0)} companies."
-                   + (f" Dropped {len(r['dropped'])} that didn't work." if r.get("dropped") else ""))
+        st.success(f"Draft ready: {r.get('skills', 0)} skills and {r.get('companies', 0)} companies"
+                   + (f" with {r['matchingPostings']:,} matching postings right now" if r.get("matchingPostings") else "")
+                   + "." + (f" Dropped {len(r['dropped'])} that didn't work." if r.get("dropped") else ""))
         st.session_state["switch_to"] = name  # picked up by the career-type picker on the next run
         st.button(f"Open {name}")
 
@@ -255,6 +256,19 @@ with st.sidebar:
         if st.button("Fetch today's postings", help="Runs job-radar for this career type, then indexes only "
                                                      "what is new. Takes a minute or two."):
             refresh(UI["label"])
+        with st.expander("Add a company"):
+            url = st.text_input("Careers page URL", placeholder="https://boards.greenhouse.io/acme",
+                                help="Greenhouse, Lever, Ashby, Workday, SmartRecruiters, BambooHR or Oracle pages.")
+            cname = st.text_input("Name (optional)")
+            if st.button("Add", disabled=not url.strip()):
+                from echolocate import jobradar
+                with st.spinner("Checking the job board ..."):
+                    r = jobradar.add_company(config.PROFILE, url.strip(), cname.strip() or None)
+                if r.get("ok"):
+                    st.success(f"Added {r.get('added') or 'it'} ({r.get('postings', 0)} postings). "
+                               "Press Fetch to include them.")
+                else:
+                    st.error(r.get("error", "Couldn't add that page."))
 
 
 def md(text) -> str:

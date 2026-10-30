@@ -264,13 +264,15 @@ def test_profiles(tmp_path, monkeypatch):
         "skills": [{"name": "BLS", "pattern": "\\bbls\\b", "core": True},
                    {"name": "Epic", "pattern": "\\bepic\\b", "core": False},
                    {"name": "Broken", "pattern": "(unclosed", "core": False}],
-        "defaults": {"includeTitleRe": ["\\bnurse\\b", "\\brn\\b"], "excludeTitle": ["senior", "sales"]}}))
+        "defaults": {"includeTitleRe": ["\\bnurse\\b", "\\brn\\b"], "excludeTitle": ["senior", "sales"],
+                     "excludeTitleRe": ["\\b(staff|principal)\\b", "travel nurse"]}}))
     profiles._load.cache_clear()
     nurse = profiles.get("nursing")
     assert nurse.source.endswith("profile.json") and set(nurse.compiled) == {"BLS", "Epic"}
     assert skills.find("BLS and Epic charting", "nursing") == ["BLS", "Epic"]
     assert in_field("Senior Registered Nurse", "nursing")      # level words are left to the level filter
     assert not in_field("Nurse Staffing Sales Rep", "nursing")
+    assert not in_field("Travel Nurse - ICU", "nursing") and in_field("Staff Nurse", "nursing")
     assert not in_field("Software Engineer", "nursing")
     assert nurse.ui["role_filter"] == "Nursing roles only" and nurse.ui["over_time"] == ["BLS", "Epic"]
     # software never reads job-radar's file, so the demo and existing results stay put
