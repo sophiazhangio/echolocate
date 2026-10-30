@@ -138,7 +138,7 @@ st.caption(f"Semantic search, resume matching and skill trends over {len(df):,} 
               "[source and setup on GitHub](https://github.com/sophiazhangio/echolocate)."
               if config.DEMO else "Everything runs locally."))
 
-tabs = st.tabs(["Search", "Match my resume", "Skill trends", "Market map", "Ask (RAG)"])
+tabs = st.tabs(["Search", "Match my resume", "Where the jobs are", "Skill trends", "Role map", "Ask (RAG)"])
 
 # --- Search ---------------------------------------------------------------------------
 with tabs[0]:
@@ -203,8 +203,73 @@ with tabs[1]:
             st.dataframe(top[["skill", "share", "on resume"]].rename(columns={"share": "% of postings"}),
                          hide_index=True, height=600)
 
-# --- Trends -----------------------------------------------------------------------------
+# --- Where ------------------------------------------------------------------------------
+@st.cache_resource(show_spinner="Placing postings on the map ...")
+def all_cities(_date: str) -> pd.DataFrame:
+    from echolocate.geo import city_table
+    return city_table(df)
+
+
+REGIONS = {"World": "world", "North America": "north america", "USA": "usa", "Europe": "europe", "Asia": "asia"}
+
 with tabs[2]:
+    try:
+        sub = df[f.mask(df)]
+        ct = all_cities(ix.latest_date)
+        here = ct[ct["row"].isin(sub.index)]
+        st.markdown("Each circle is a city. Bigger circles have more open postings that match the sidebar "
+                    "filters; a posting listed in several cities counts in each. Hover a circle for its top "
+                    "companies, or pick a city below to list its jobs.")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Postings with a city", f"{here['row'].nunique():,}")
+        m2.metric("Remote postings", f"{int(sub['remote'].sum()):,}")
+        m3.metric("Cities", f"{here.groupby(['city', 'country']).ngroups:,}")
+        region = st.radio("Region", list(REGIONS), horizontal=True, label_visibility="collapsed")
+        if here.empty:
+            st.info("No postings with a city match these filters.")
+        else:
+            agg = (here.groupby(["city", "country", "lat", "lon"])["row"]
+                   .agg(postings="nunique", companies=lambda r: ", ".join(df.loc[r, "company"].value_counts()
+                                                                           .head(4).index))
+                   .reset_index().sort_values("postings", ascending=False))
+            agg["place"] = agg["city"] + ", " + agg["country"]
+            fig = px.scatter_geo(agg, lat="lat", lon="lon", size="postings", hover_name="place",
+                                 hover_data={"postings": True, "companies": True, "lat": False, "lon": False},
+                                 size_max=45, scope=REGIONS[region],
+                                 **({} if region == "USA" else {"projection": "natural earth"}))
+            fig.update_traces(marker=dict(color="#ff4b4b", opacity=0.65, line=dict(width=0.5, color="white")))
+            # name the biggest cities, skipping any that sit right next to a bigger named one
+            near = {"World": 6.0, "USA": 1.5}.get(region, 3.0)
+            named = []
+            for r in agg.itertuples():
+                if len(named) == 15:
+                    break
+                if all(abs(r.lat - n.lat) > near or abs(r.lon - n.lon) > near for n in named):
+                    named.append(r)
+            top = pd.DataFrame(named)
+            fig.add_scattergeo(lat=top["lat"], lon=top["lon"], text=top["city"], mode="text",
+                               textposition="top center", textfont=dict(size=11), hoverinfo="skip",
+                               showlegend=False)
+            fig.update_geos(showcountries=True, countrycolor="rgba(140,140,140,0.7)", showcoastlines=True,
+                            coastlinecolor="rgba(140,140,140,0.7)", showland=True,
+                            landcolor="rgba(140,140,140,0.15)", showocean=False, showlakes=False,
+                            showsubunits=True, subunitcolor="rgba(140,140,140,0.35)", bgcolor="rgba(0,0,0,0)",
+                            showframe=False)
+            fig.update_layout(height=620, margin=dict(l=0, r=0, t=0, b=0))
+            st.plotly_chart(fig)
+            choices = [f"{r.place} ({r.postings})" for r in agg.itertuples()]
+            pick = st.selectbox("Jobs in a city", choices)
+            r = agg.iloc[choices.index(pick)]
+            rows = here[(here["city"] == r["city"]) & (here["country"] == r["country"])]["row"].unique()
+            jobs = df.loc[rows, ["title", "company", "level", "posted", "pay", "url"]].sort_values("posted",
+                                                                                                 ascending=False)
+            st.dataframe(jobs, hide_index=True, column_config={
+                "url": st.column_config.LinkColumn("link", display_text="open")})
+    except Exception:
+        st.error("The location map couldn't be drawn for these filters. Try widening them in the sidebar.")
+
+# --- Trends -----------------------------------------------------------------------------
+with tabs[3]:
     from echolocate.trends import by_posted_month, demand, over_time, rising
     sub = df[f.mask(df)]
     d = demand(sub)
@@ -237,15 +302,19 @@ with tabs[2]:
         st.plotly_chart(fig)
         st.caption("Older months only include postings that are still open, which skews toward hard-to-fill roles.")
 
-# --- Map --------------------------------------------------------------------------------
-with tabs[3]:
-    from echolocate.clusters import cluster_map
+# --- Role map ---------------------------------------------------------------------------
+def role_map_tab():
+    from echolocate.clusters import MIN_POSTINGS, cluster_map
     c1, c2 = st.columns([1, 3])
     method = c1.radio("Clustering", ["hdbscan", "kmeans"], help="HDBSCAN finds its own number of clusters "
                       "and leaves outliers unclustered; KMeans assigns everything to 20 clusters.")
     map_mask = Filters(software_only=software_only, remote_only=remote_only, levels=levels).mask(df)
     c2.caption(f"{map_mask.sum():,} postings (map uses the role / remote / level filters). "
                "The first run takes about a minute; results are cached.")
+    if map_mask.sum() < MIN_POSTINGS:
+        st.info(f"Only {map_mask.sum()} postings match the role / remote / level filters; the role map needs "
+                f"at least {MIN_POSTINGS}. Add a level or turn off 'Remote only' in the sidebar.")
+        return
     with st.spinner("Projecting with UMAP and clustering ..."):
         pts, clusters = cluster_map(ix, map_mask, method=method)
     st.markdown("Each dot is one posting. Dots close together have similar job descriptions, so each "
@@ -293,8 +362,17 @@ with tabs[3]:
     table = clusters.assign(area=clusters["label"].map(names)).rename(columns={"label": "keywords"})
     st.dataframe(table[["area", "keywords", "postings", "top companies", "top skills"]], hide_index=True)
 
-# --- RAG --------------------------------------------------------------------------------
+
 with tabs[4]:
+    st.caption("A map of *kinds of roles*, not of places: postings with similar descriptions sit close "
+               "together. For cities, see **Where the jobs are**.")
+    try:
+        role_map_tab()
+    except Exception:
+        st.error("The role map couldn't be drawn for these filters. Try widening them in the sidebar.")
+
+# --- RAG --------------------------------------------------------------------------------
+with tabs[5]:
     from echolocate.rag import ask, gather, ollama_status
     ok, msg = (False, "") if config.DEMO else ollama_status()
     if config.DEMO:

@@ -180,3 +180,40 @@ def test_read_resume_errors_are_readable(tmp_path):
     latin = tmp_path / "l.txt"
     latin.write_bytes(("Python developer caf\xe9 " * 10).encode("latin-1"))
     assert "Python" in read_resume(latin)
+
+
+def test_geo_parse_locations():
+    from echolocate.geo import parse
+    city = lambda s: [(c["city"], c["country"]) for c in parse(s)]
+    assert city("NY or SF; US") == [("New York City", "United States"), ("San Francisco", "United States")]
+    assert city("Portland, OR")[0] == ("Portland", "United States")
+    assert city("Vancouver, BC")[0][1] == "Canada"
+    assert city("Cambridge, UK")[0][1] == "United Kingdom"
+    assert city("ES - Barcelona, Spain; Barcelona") == [("Barcelona", "Spain")]
+    assert city("Remote - US") == [] and city("Phillipsburg Warehouse") == []
+
+
+def test_cluster_map_small_selection():
+    import numpy as np
+    import pytest
+    from echolocate.clusters import cluster_map
+    ix = _index(30)  # helper below builds a fake index
+    pts, clusters = cluster_map(ix, np.ones(30, bool), cache=False)
+    assert len(clusters) >= 2 and len(pts) == 30
+    with pytest.raises(ValueError):
+        cluster_map(ix, np.arange(30) < 10, cache=False)
+
+
+def _index(n):
+    import numpy as np
+    import pandas as pd
+    from types import SimpleNamespace
+    rng = np.random.default_rng(0)
+    centers = rng.normal(size=(3, 16))
+    vecs = np.vstack([centers[i % 3] + 0.05 * rng.normal(size=16) for i in range(n)]).astype(np.float32)
+    vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
+    df = pd.DataFrame({"id": [str(i) for i in range(n)], "company": [f"c{i % 5}" for i in range(n)],
+                       "title": [["Backend Engineer", "iOS Engineer", "Data Engineer"][i % 3] for i in range(n)],
+                       "location": "SF", "level": "entry", "remote": False, "url": "",
+                       "skills": [["Python"]] * n})
+    return SimpleNamespace(postings=df, posting_vecs=vecs, latest_date="2026-10-29", model="fake")

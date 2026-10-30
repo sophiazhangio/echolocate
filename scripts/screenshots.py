@@ -1,11 +1,12 @@
 """Regenerate docs/*.png from a running app (streamlit run app.py). Needs `pip install playwright`
 and Google Chrome; run: python scripts/screenshots.py"""
 
+import os
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-URL = "http://localhost:8501"
+URL = os.environ.get("ECHO_URL", "http://localhost:8501")
 OUT = Path(__file__).resolve().parent.parent / "docs"
 
 
@@ -31,12 +32,17 @@ with sync_playwright() as p:
     page.get_by_text("Closest postings").wait_for()
     page.screenshot(path=OUT / "resume.png")
 
+    tab(page, "Where the jobs are")
+    page.locator(".js-plotly-plot:visible").first.wait_for()
+    page.wait_for_timeout(3000)
+    page.screenshot(path=OUT / "where.png")
+
     tab(page, "Skill trends")
-    page.locator(".js-plotly-plot").first.wait_for()
+    page.locator(".js-plotly-plot:visible").first.wait_for()
     page.screenshot(path=OUT / "trends.png")
 
-    tab(page, "Market map")
-    page.locator(".js-plotly-plot").last.wait_for()
+    tab(page, "Role map")
+    page.locator(".js-plotly-plot:visible").first.wait_for()
     page.wait_for_timeout(3000)
     page.screenshot(path=OUT / "map.png")
 

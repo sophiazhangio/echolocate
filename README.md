@@ -18,7 +18,8 @@ Everything runs on a laptop. No paid APIs or API keys: embeddings come from `sen
 | **Match my resume** | Ranks postings by similarity to a resume PDF, and lists the skills those postings ask for with a check for the ones the resume already shows. |
 | **More like this** | Nearest neighbours of any posting (re-posts of the same role in other cities are skipped). |
 | **Skill trends** | Share of postings that mention each of ~55 skills, per daily snapshot, plus a publish-month view that works from a single snapshot. |
-| **Market map** | UMAP projection of every posting, clustered with HDBSCAN (or KMeans) and named automatically from the most distinctive title words in each cluster. |
+| **Where the jobs are** | World / US map of open postings by city, from free-text locations ("NY or SF; US", "Portland, OR") resolved offline against GeoNames; pick a city to list its jobs. |
+| **Role map** | A map of *kinds of roles*, not places: UMAP projection of every posting, clustered with HDBSCAN (or KMeans), each area named after its most common specific job title. |
 | **Ask (RAG)** | Answers questions from the retrieved postings only, with numbered citations that link to each posting. |
 
 ## How it works
@@ -74,7 +75,7 @@ Embeddings miss exact tool names (Spark, Airflow); keywords fail on short ambigu
 
 Two other checks that changed the design:
 
-- **Market map before and after company centering.** Without it, the average share of a cluster's largest company was 81% (clusters were "Stripe", "Roblox", "Cloudflare"). With it, 28%, and clusters read as role types: applied AI / agents, storage & databases, security, frontend, forward-deployed, payments, mobile, SRE.
+- **Role map before and after company centering.** Without it, the average share of a cluster's largest company was 81% (clusters were "Stripe", "Roblox", "Cloudflare"). With it, 28%, and clusters read as role types: applied AI / agents, storage & databases, security, frontend, forward-deployed, payments, mobile, SRE.
 - **Grounding.** An early RAG answer called London roles "remote" because the question's "remote" was only used for similarity. Now the same query parser that powers search turns "remote" / "new grad" into hard filters before retrieval, and each source tells the model its level.
 
 ## Setup
@@ -134,7 +135,8 @@ All optional, as environment variables:
 | | |
 |---|---|
 | ![Match my resume](docs/resume.png) **Match my resume**: closest postings and which in-demand skills the resume shows | ![Skill trends](docs/trends.png) **Skill trends**: share of entry/unspecified-level software postings that mention each skill |
-| ![Market map](docs/map.png) **Market map**: UMAP + HDBSCAN on company-centred embeddings | ![Ask](docs/rag.png) **Ask (RAG)**: Llama 3.2 3B answering from retrieved postings, with citations |
+| ![Where the jobs are](docs/where.png) **Where the jobs are**: open postings by city, world or US view | ![Role map](docs/map.png) **Role map**: UMAP + HDBSCAN on company-centred embeddings, areas named by job title |
+| ![Ask](docs/rag.png) **Ask (RAG)**: Llama 3.2 3B answering from retrieved postings, with citations | |
 
 ## Project layout
 
@@ -145,7 +147,8 @@ echolocate/
   search.py     dense / sparse / hybrid search, filters, similar-to, resume matching, RAG retrieval
   skills.py     skill vocabulary (regex per skill)
   trends.py     demand counts, per-snapshot and per-month shares
-  clusters.py   UMAP + HDBSCAN / KMeans market map with automatic labels
+  clusters.py   UMAP + HDBSCAN / KMeans role map with automatic labels
+  geo.py        free-text job locations -> cities with coordinates (offline GeoNames)
   rag.py        Ollama client and grounded prompt
   evaluate.py   precision@10 benchmark
 app.py          Streamlit UI
