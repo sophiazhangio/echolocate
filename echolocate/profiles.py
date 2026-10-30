@@ -102,8 +102,8 @@ def _compile(js: str) -> re.Pattern | None:
 
 
 def _any(patterns: list[str]) -> re.Pattern | None:
-    good = [p for p in patterns if _compile(p) is not None]
-    return re.compile("|".join(f"(?:{re.sub(r'\(\?<(?=[A-Za-z])', '(?P<', p)})" for p in good)) if good else None
+    good = [rx.pattern for rx in map(_compile, patterns) if rx is not None]
+    return re.compile("|".join(f"(?:{p})" for p in good)) if good else None
 
 
 def _is_level_pattern(pat: str) -> bool:
