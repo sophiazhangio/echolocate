@@ -56,12 +56,9 @@ jobs:
         run: |
           for p in $PROFILES; do
             # one failing profile shouldn't stop the others; the build keeps yesterday's data for it
-            if out=$(npm run --silent dump -- --profile "$p" 2>&1); then
-              echo "$out" | tail -n 1
-            else
-              echo "$out" | tail -n 20
-              echo "::warning::job-radar failed for $p"
-            fi
+            out=$(npm run --silent dump -- --profile "$p" 2>&1) || true
+            echo "$out" | tail -n 20
+            echo "$out" | python3 ../scripts/check_dump.py "$p"
           done
 
       - name: Index and publish
