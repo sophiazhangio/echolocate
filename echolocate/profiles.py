@@ -16,7 +16,7 @@ profile.json keys used here (all optional except skills):
   searchTerms   ["help desk", ...]; the first one seeds the example search
   entryTitle    regex; titles that match count as entry level
   defaults.includeTitleRe / includeTitle   regexes / phrases that mark a title as this career
-  defaults.excludeTitle                    phrases that rule a title out (level words are ignored:
+  defaults.excludeTitle / excludeTitleRe   phrases / regexes that rule a title out (level words are ignored:
                                            the app has its own level filter)
 """
 from __future__ import annotations
@@ -106,6 +106,12 @@ def _any(patterns: list[str]) -> re.Pattern | None:
     return re.compile("|".join(f"(?:{re.sub(r'\(\?<(?=[A-Za-z])', '(?P<', p)})" for p in good)) if good else None
 
 
+def _is_level_pattern(pat: str) -> bool:
+    """True for patterns that only name levels, like \\b(senior|sr\\.?|staff)\\b."""
+    words = re.sub(r"\\b|\(\?:|[()^$?]", "", pat).replace("\\.", ".").replace("\\s", " ").split("|")
+    return all(w.strip().lower() in _LEVEL_WORDS for w in words if w.strip())
+
+
 def _first6(names: list[str]) -> list[str]:
     return list(dict.fromkeys(names))[:6]
 
@@ -124,7 +130,8 @@ def _from_json(name: str, path: Path) -> Profile:
 
     include = _any(list(d.get("includeTitleRe") or []) + [re.escape(p.lower()) for p in d.get("includeTitle") or []])
     exclude = _any([re.escape(p.strip().lower()) for p in d.get("excludeTitle") or []
-                    if p.strip().lower() not in _LEVEL_WORDS])
+                    if p.strip().lower() not in _LEVEL_WORDS]
+                   + [p for p in d.get("excludeTitleRe") or [] if not _is_level_pattern(p)])
     if include is not None:
         def role(title: str, _inc=include, _exc=exclude) -> bool:
             t = title.lower()
