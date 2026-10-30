@@ -27,6 +27,7 @@ ALIASES = {
 # Words around a city that aren't part of its name.
 _NOISE = re.compile(r"\b(remote|hybrid|on-?site|in[- ]office|office|offices|hq|headquarters|locations?|"
                     r"greater|metro(politan)?|area|based|only|preferred|any|downtown|campus|city of)\b", re.I)
+_ZIP = re.compile(r"\b\d{5}(?:-\d{4})?\b")
 # Countries we weight up when a bare name is shared (most postings here are US tech companies).
 _HOME = {"US": 2.5}
 _COUNTRY_ALIASES = {"usa": "US", "us": "US", "u.s.": "US", "u.s.a.": "US", "united states of america": "US",
@@ -85,7 +86,10 @@ def _qualifies(city: dict, token: str) -> bool:
     return False
 
 
-def _pick(cands: list[dict], qualifier: str | None) -> tuple[dict, bool]:
+def _pick(cands: list[dict], qualifier: str | None, token: str = "") -> tuple[dict, bool]:
+    # a city actually named this beats a big city that merely lists it as an alternate name
+    exact = [] if token in ALIASES else [c for c in cands if _fold(c["name"]) == token]
+    cands = exact or cands
     if qualifier:
         q = [c for c in cands if _qualifies(c, qualifier)]
         if q:
@@ -101,20 +105,34 @@ def parse(location: str | None) -> list[dict]:
     text = re.sub(r"\(.*?\)|\[.*?\]", " ", location)
     out, seen = [], set()
     for part in re.split(r"\s*(?:;|\||•|/|\n|\s-\s|–|—|\bor\b|\band\b|&)\s*", text, flags=re.I):
-        tokens = [t.strip() for t in part.split(",")]
+        tokens = [_ZIP.sub(" ", t).strip() for t in part.split(",")]
+        # Workday style "US-CA-Irvine" / "United States-California-Torrance": read it as "Irvine, CA, US"
+        dashed = part.strip().split("-")
+        strict = 2 <= len(dashed) <= 4 and "," not in part and _fold(dashed[0]) in countries | states.keys()
+        if strict:  # the city must sit in the country / state it is written with ("US-PERM" is not Perm)
+            tokens = [d.strip() for d in reversed(dashed)]
         i = 0
         while i < len(tokens):
             t = _fold(_NOISE.sub(" ", tokens[i]))
             skip = (t in countries or t in states) and t not in _CITY_STATES and t not in ALIASES
             cands = None if skip or len(t) < 2 else by_name.get(t)
+            if not cands and not skip:
+                # "Irvine Spectrum Office", "Seattle HQ": try the leading words
+                words = t.split()
+                for n in range(len(words) - 1, 0, -1):
+                    head = " ".join(words[:n])
+                    # official names only: "Sophia Antipolis" must not become Sofia
+                    if (cands := [c for c in by_name.get(head, []) if _fold(c["name"]) == head]):
+                        t = head
+                        break
             if not cands:
                 i += 1
                 continue
             nxt = tokens[i + 1] if i + 1 < len(tokens) else None
-            city, used = _pick(cands, nxt)
+            city, used = _pick(cands, nxt, t)
             i += 2 if used else 1
             # an unqualified small town is more likely a false hit than a real office
-            if not used and city["population"] < 50_000 and t not in ALIASES:
+            if not used and (strict or (city["population"] < 50_000 and t not in ALIASES)):
                 continue
             if city["geonameid"] not in seen:
                 seen.add(city["geonameid"])

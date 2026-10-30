@@ -191,6 +191,13 @@ def test_geo_parse_locations():
     assert city("Cambridge, UK")[0][1] == "United Kingdom"
     assert city("ES - Barcelona, Spain; Barcelona") == [("Barcelona", "Spain")]
     assert city("Remote - US") == [] and city("Phillipsburg Warehouse") == []
+    # Workday / Oracle style
+    assert city("US-CA-Irvine") == [("Irvine", "United States")]
+    assert city("United States-California-Torrance") == [("Torrance", "United States")]
+    assert city("Santa Ana, CA 92705") == [("Santa Ana", "United States")]
+    assert city("Irvine Spectrum Office") == [("Irvine", "United States")]
+    assert city("Chicago, IL; US-PERM") == [("Chicago", "United States")]   # PERM = permanent, not Perm
+    assert city("Sophia Antipolis") == [] and city("Winston-Salem, NC")[0][0] == "Winston-Salem"
 
 
 def test_cluster_map_small_selection():
