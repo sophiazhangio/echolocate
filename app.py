@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import tempfile
+from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
@@ -25,6 +27,32 @@ def load(db_mtime: float):
     return s
 
 
+def download_demo_data():
+    """The hosted demo has no job-radar dumps; fetch the prebuilt index once."""
+    import requests
+    config.DATA.mkdir(parents=True, exist_ok=True)
+    bar = st.progress(0.0, "Downloading the demo index (about 250 MB, first start only) ...")
+    for i, name in enumerate(config.DEMO_FILES):
+        dest = config.DATA / name
+        if dest.exists():
+            continue
+        part = dest.with_suffix(dest.suffix + ".part")
+        with requests.get(f"{config.DEMO_ASSETS}/{name}", stream=True, timeout=60) as r:
+            r.raise_for_status()
+            total, done = int(r.headers.get("content-length", 0)), 0
+            with open(part, "wb") as fh:
+                for block in r.iter_content(1 << 20):
+                    fh.write(block)
+                    done += len(block)
+                    if total:
+                        bar.progress((i + done / total) / len(config.DEMO_FILES),
+                                     f"Downloading {name} ({done >> 20} / {total >> 20} MB) ...")
+        part.rename(dest)
+    bar.empty()
+
+
+if config.DEMO and not config.DB.exists():
+    download_demo_data()
 if not config.DB.exists():
     st.error("No index yet. Run `python -m echolocate index` first.")
     st.stop()
@@ -82,7 +110,10 @@ def show_results(res: pd.DataFrame, snippet: bool = False):
 st.title("echolocate")
 st.markdown("*Find roles by meaning, not keywords.*")
 st.caption(f"Semantic search, resume matching and skill trends over {len(df):,} live postings from "
-           f"{df['company'].nunique():,} companies (Greenhouse, Ashby, Lever). Everything runs locally.")
+           f"{df['company'].nunique():,} companies (Greenhouse, Ashby, Lever). "
+           + (f"Live demo on a fixed snapshot from {ix.latest_date}; "
+              "[source and setup on GitHub](https://github.com/sophiazhangio/echolocate)."
+              if config.DEMO else "Everything runs locally."))
 
 tabs = st.tabs(["Search", "Match my resume", "Skill trends", "Market map", "Ask (RAG)"])
 
@@ -105,17 +136,21 @@ with tabs[0]:
 # --- Resume -----------------------------------------------------------------------------
 with tabs[1]:
     default = config.resume_path()
-    up = st.file_uploader("Resume (PDF or text). Defaults to the one in job-radar's config.", type=["pdf", "txt", "md"])
+    label = ("Upload a resume (PDF or text). It is read once to compute the match and is not saved."
+             if config.DEMO else "Resume (PDF or text). Defaults to the one in job-radar's config.")
+    up = st.file_uploader(label, type=["pdf", "txt", "md"])
     text = ""
     if up is not None:
-        tmp = config.DATA / f"upload-{up.name}"
-        tmp.write_bytes(up.getvalue())
-        text = read_resume(tmp)
-        tmp.unlink()
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d) / f"resume{Path(up.name).suffix.lower()}"
+            tmp.write_bytes(up.getvalue())
+            text = read_resume(tmp)
         st.caption(f"Using uploaded {up.name}")
     elif default and default.exists():
         text = read_resume(default)
         st.caption("Using the resume set in job-radar's config")
+    elif config.DEMO:
+        st.info("Upload a resume to see the postings closest to it and which in-demand skills it shows.")
     else:
         st.warning("No resume found. Upload one, or set ECHO_RESUME.")
     if text:
@@ -195,8 +230,15 @@ with tabs[3]:
 # --- RAG --------------------------------------------------------------------------------
 with tabs[4]:
     from echolocate.rag import ask, gather, ollama_status
-    ok, msg = ollama_status()
-    st.caption(("✅ " if ok else "⚠️ ") + msg)
+    ok, msg = (False, "") if config.DEMO else ollama_status()
+    if config.DEMO:
+        st.info("This free demo server has no GPU, so it shows the retrieval half of RAG: the passages a "
+                "local Llama 3.2 model would answer from, with citations. Generated answers need Ollama "
+                "on your own machine ([setup](https://github.com/sophiazhangio/echolocate#setup)); "
+                "the screenshot below is a real local answer.")
+        st.image("docs/rag.png", caption="Local run: Llama 3.2 3B via Ollama")
+    else:
+        st.caption(("✅ " if ok else "⚠️ ") + msg)
     question = st.text_input("Ask about the postings (uses the sidebar filters)",
                              "Which remote new grad roles mention LLM agents, and what stack do they use?")
     if st.button("Ask", type="primary", disabled=not ok) and question.strip():
@@ -215,6 +257,9 @@ with tabs[4]:
             st.markdown(f"**[{n}]** [{md(s['title'])}]({s['url']}) · {md(s['company'])} · "
                         f"{'Remote' if s['remote'] else md(s['location'])}")
     elif not ok and question.strip():
-        st.subheader("Retrieved postings (no model needed)")
+        st.subheader("Retrieved sources (what the model would read)")
         for n, s in enumerate(gather(searcher, question, f), 1):
-            st.markdown(f"**[{n}]** [{md(s['title'])}]({s['url']}) · {md(s['company'])}")
+            with st.container(border=True):
+                st.markdown(f"**[{n}]** [{md(s['title'])}]({s['url']}) · {md(s['company'])} · "
+                            f"{'Remote' if s['remote'] else md(s['location'])}")
+                st.caption(md(s["text"][:500] + (" ..." if len(s["text"]) > 500 else "")))

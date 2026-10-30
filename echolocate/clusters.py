@@ -74,8 +74,11 @@ def cluster_map(ix: Index, mask: np.ndarray | None = None, method: str = "hdbsca
                      "top skills": ", ".join(sub["skills"].explode().value_counts().head(6).index)})
     clusters = pd.DataFrame(rows).sort_values("postings", ascending=False).reset_index(drop=True)
     if cache:
-        config.DATA.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(pickle.dumps((points, clusters)))
+        try:
+            config.DATA.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(pickle.dumps((points, clusters)))
+        except OSError:
+            pass  # read-only deployments just recompute
     return points, clusters
 
 
